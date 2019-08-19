@@ -123,7 +123,7 @@ kd_loss_fun.cuda()
 if args.specify_path != '':
     args.save_path = args.specify_path
 else :
-    args.save_path = 'experiments/' + args.dataset + '/' + args.teacher_arch + str(args.teacher_depth)  + '_' + args.loss_fun \
+    args.save_path = 'experiments/' + args.dataset + '/kd/' + args.teacher_arch + str(args.teacher_depth)  + '_' + args.loss_fun \
                     + '_' + args.arch + str(args.depth) + '_wd' + str(args.weight_decay) + '_T' + str(args.temperature)
 if not os.path.isdir(args.save_path):
     os.makedirs(args.save_path)

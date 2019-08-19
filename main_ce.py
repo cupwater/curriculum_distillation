@@ -98,7 +98,7 @@ assert args.dataset == 'cifar10' or args.dataset == 'cifar100', 'Dataset can onl
 if args.finetune:
     args.save_path = 'experiments/' + args.dataset + '/finetune/' + args.arch + str(args.depth) + '_wd' + str(args.weight_decay) 
 else :
-    args.save_path = 'experiments/' + args.dataset + '/' + args.arch + str(args.depth) + '_wd' + str(args.weight_decay) 
+    args.save_path = 'experiments/' + args.dataset + '/baseline/' + args.arch + str(args.depth) + '_wd' + str(args.weight_decay) 
 if not os.path.isdir(args.save_path):
     os.makedirs(args.save_path)
 
