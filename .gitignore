@@ -1,0 +1,8 @@
+experiments/
+*.tar.gz
+*.tar
+*.swp
+__pycache--/
+*pycache*
+data/
+*.pyc
