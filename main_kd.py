@@ -39,6 +39,8 @@ loss_dict = {
     'kd': 'KDLoss',
     'cl_kd': 'CurriculumKDLoss',
     'anti_cl_kd': 'AntiCurriculumKDLoss',
+    'pce': 'PartCElossbyRemoveLowConfidenceData',
+    'pkd': 'PartKDlossbyRemoveLowConfidenceData',
     'wce': 'WeightedCrossEntropy',
     'cwce': 'CorrectWeightedCrossEntropy',
     'dkce': 'DKwithCrossEntropy',
@@ -53,6 +55,7 @@ parser.add_argument('--teacher-depth', default=32, type=int)
 parser.add_argument('--teacher-arch', default='resnet', type=str)
 parser.add_argument('--teacher-growthRate', type=int, default=12, help='Growth rate for DenseNet.')
 parser.add_argument('--temperature', default=5, type=float)
+parser.add_argument('--pce-threshold', default=0.1, type=float)
 parser.add_argument('--loss-fun', default='kd', type=str)
 
 parser.add_argument('--save-path', default='experiments/cifar100/template', type=str)
@@ -110,7 +113,7 @@ args = parser.parse_args()
 state = {k: v for k, v in args._get_kwargs()}
 
 # get the loss function
-kd_loss_fun = loss.__dict__[loss_dict[args.loss_fun]](T=args.temperature, num_classes=10 if args.dataset=='cifar10' else 100)
+kd_loss_fun = loss.__dict__[loss_dict[args.loss_fun]](T=args.temperature, num_classes=10 if args.dataset=='cifar10' else 100, threshold=args.pce_threshold)
 kd_loss_fun.cuda()
 
 # when specify_path is true, use the specify path
@@ -118,7 +121,7 @@ if args.specify_path != '':
     args.save_path = args.specify_path
 else :
     args.save_path = 'experiments/' + args.dataset + '/adjust_lr_' + args.loss_fun + '/' + args.teacher_arch + str(args.teacher_depth)  + '_' + args.loss_fun \
-                    + '_' + args.arch + str(args.depth) + '_wd' + str(args.weight_decay) + '_T' + str(args.temperature) + '_lr' + str(args.lr)
+                    + '_' + args.arch + str(args.depth) + '_wd' + str(args.weight_decay) + '_T' + str(args.temperature) + '_lr' + str(args.lr) + '_threshold' + str(args.pce_threshold)
 if not os.path.isdir(args.save_path):
     os.makedirs(args.save_path)
 print(args.save_path)

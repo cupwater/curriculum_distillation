@@ -13,4 +13,5 @@ python main_kd.py \
     --temperature $3 --teacher-path experiments/$6/baseline/resnet$4_wd0.0001/model_best.pth.tar --teacher-depth $4 \
     --loss-fun $2 \
     -a resnet --depth $5 --dataset $6 --lr $7 --train-batch 64 --epochs 200 --schedule 80 130 161 --gamma 0.1 --wd 1e-4 \
-    $8 \
+    --pce-threshold $8 \
+    $9 \
