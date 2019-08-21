@@ -37,6 +37,8 @@ model_names = sorted(name for name in models.__dict__
 
 loss_dict = {
     'kd': 'KDLoss',
+    'cl_kd': 'CurriculumKDLoss',
+    'anti_cl_kd': 'AntiCurriculumKDLoss',
     'wce': 'WeightedCrossEntropy',
     'cwce': 'CorrectWeightedCrossEntropy',
     'dkce': 'DKwithCrossEntropy',
@@ -51,7 +53,6 @@ parser.add_argument('--teacher-depth', default=32, type=int)
 parser.add_argument('--teacher-arch', default='resnet', type=str)
 parser.add_argument('--teacher-growthRate', type=int, default=12, help='Growth rate for DenseNet.')
 parser.add_argument('--temperature', default=5, type=int)
-parser.add_argument('--kd-indexes', default='', type=str)
 parser.add_argument('--loss-fun', default='kd', type=str)
 
 parser.add_argument('--save-path', default='experiments/cifar100/template', type=str)
@@ -109,21 +110,14 @@ args = parser.parse_args()
 state = {k: v for k, v in args._get_kwargs()}
 
 # get the loss function
-if args.kd_indexes != '':
-    kd_indexes = np.loadtxt(args.kd_indexes)
-    kd_indexes = kd_indexes.astype(int)
-    return_index = True
-    kd_loss_fun = loss.__dict__[loss_dict[args.loss_fun]](T=args.temperature, kd_targets_indexes=kd_indexes)
-else :
-    kd_loss_fun = loss.__dict__[loss_dict[args.loss_fun]](T=args.temperature)
-    return_index = False
+kd_loss_fun = loss.__dict__[loss_dict[args.loss_fun]](T=args.temperature, num_classes=10 if args.dataset=='cifar10' else 100)
 kd_loss_fun.cuda()
 
 # when specify_path is true, use the specify path
 if args.specify_path != '':
     args.save_path = args.specify_path
 else :
-    args.save_path = 'experiments/' + args.dataset + '/kd/' + args.teacher_arch + str(args.teacher_depth)  + '_' + args.loss_fun \
+    args.save_path = 'experiments/' + args.dataset + '/' + args.loss_fun + '/' + args.teacher_arch + str(args.teacher_depth)  + '_' + args.loss_fun \
                     + '_' + args.arch + str(args.depth) + '_wd' + str(args.weight_decay) + '_T' + str(args.temperature)
 if not os.path.isdir(args.save_path):
     os.makedirs(args.save_path)
@@ -160,13 +154,12 @@ def main():
         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
     ])
     if args.dataset == 'cifar10':
-        dataloader = cifar_data.CIFAR10
+        dataloader = datasets.CIFAR10
         num_classes = 10
     else:
         dataloader = datasets.CIFAR100
         num_classes = 100
 
-    print(return_index)
     trainset = dataloader(root='./data', train=True, download=True, transform=transform_train)
     trainloader = data.DataLoader(trainset, batch_size=args.train_batch, shuffle=True, num_workers=args.workers)
 
@@ -304,10 +297,7 @@ def train(trainloader, t_model, s_model, criterion, optimizer, epoch, use_cuda, 
         t_prec1, t_prec5 = accuracy(t_outputs.data, targets.data, topk=(1, 5))
         # measure accuracy and record loss
         prec1, prec5 = accuracy(s_outputs.data, targets.data, topk=(1, 5))
-        if len(batch_data) == 2:
-            loss_kl = kd_loss_fun(s_outputs, t_outputs.detach(), targets)
-        else:
-            loss_kl = kd_loss_fun(s_outputs, t_outputs.detach(), targets, indexes)
+        loss_kl = kd_loss_fun(s_outputs, t_outputs.detach(), targets)
         loss_ce = criterion(s_outputs, targets)
         loss = loss_kl
         losses.update(loss.data[0], inputs.size(0))

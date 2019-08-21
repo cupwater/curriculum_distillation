@@ -27,10 +27,9 @@ class L2Loss(nn.Module):
             loss = loss / output.size(0) / 2
         return loss
 
-
 # knowledge distillation
 class KDLoss(nn.Module):
-    def __init__(self, T=5, alpha=1.0, eps=1e-8):
+    def __init__(self, T=5, alpha=1.0, eps=1e-8, num_classes=10):
         super(KDLoss, self).__init__()
         self.eps=eps
         self.T = T
@@ -41,6 +40,50 @@ class KDLoss(nn.Module):
         loss_kl = torch.mean( -torch.dot(q.view(-1), (torch.log((p+self.eps) / (q+self.eps))).view(-1))) * self.alpha + F.cross_entropy(pred_logits, labels) * (1. - self.alpha)
         return loss_kl
 
+# knowledge distillation
+class AntiCurriculumKDLoss(nn.Module):
+    def __init__(self, T=5, alpha=1.0, eps=1e-8, num_classes=10):
+        super(AntiCurriculumKDLoss, self).__init__()
+        self.eps=eps
+        self.T = T
+        self.alpha = alpha
+        self.num_classes=num_classes
+    def forward(self, pred_logits, gt_logits, labels):
+        # for each sample, compute the T
+        temp = F.softmax(gt_logits/self.T, dim=1)
+        index = labels.detach()
+        #pdb.set_trace()
+        cl_T = temp[ range(labels.size(0)), index ]
+        cl_T = cl_T.view(-1, 1)
+        cl_T = cl_T.repeat(1, gt_logits.size(1))
+        cl_T = self.T / torch.mean(cl_T) * cl_T
+        p = F.softmax(pred_logits / cl_T, dim=1)
+        q = F.softmax(gt_logits / cl_T, dim=1)
+        loss_kl = torch.mean( -torch.dot(q.view(-1), (torch.log((p+self.eps) / (q+self.eps))).view(-1))) * self.alpha + F.cross_entropy(pred_logits, labels) * (1. - self.alpha)
+        return loss_kl
+
+# knowledge distillation
+class CurriculumKDLoss(nn.Module):
+    def __init__(self, T=5, alpha=1.0, eps=1e-8, num_classes=10):
+        super(CurriculumKDLoss, self).__init__()
+        self.eps=eps
+        self.T = T
+        self.alpha = alpha
+        self.num_classes=num_classes
+    def forward(self, pred_logits, gt_logits, labels):
+        # for each sample, compute the T
+        temp = F.softmax(gt_logits/self.T, dim=1)
+        index = labels.detach()
+        #pdb.set_trace()
+        cl_T = temp[ range(labels.size(0)), index ]
+        cl_T = cl_T.view(-1, 1)
+        cl_T = cl_T.repeat(1, gt_logits.size(1))
+        cl_T = torch.mean(cl_T) * self.T / cl_T
+        p = F.softmax(pred_logits / cl_T, dim=1)
+        q = F.softmax(gt_logits / cl_T, dim=1)
+        loss_kl = torch.mean( -torch.dot(q.view(-1), (torch.log((p+self.eps) / (q+self.eps))).view(-1))) * self.alpha + F.cross_entropy(pred_logits, labels) * (1. - self.alpha)
+        return loss_kl
+
 # label smoothing loss for cross-entropy
 class LSRLoss(nn.Module):
     def __init__(self, eps=1e-10, gamma=1, K=100):
@@ -48,7 +91,7 @@ class LSRLoss(nn.Module):
         self.eps=eps
         self.uniforms = float(1.0/float(K))
         self.gamma = gamma
-    def forward(self, pred_logits, gt_logits, labels):
+    def forward(self, pred_logits, labels):
         p = F.softmax(pred_logits, dim=1)
         q = F.softmax( self.uniforms * torch.ones(labels.size(0)), dim=1)
         loss_lsr = self.gamma * torch.mean( -torch.dot(q.view(-1), (torch.log((p+eps) / (q+eps))).view(-1))) + F.cross_entropy(pred_logits, labels)

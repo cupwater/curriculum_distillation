@@ -10,7 +10,7 @@
 MV2_USE_CUDA=1 MV2_ENABLE_AFFINITY=0 MV2_SMP_USE_CMA=0 \
 srun --mpi=pmi2 -p $1 -n1 --gres=gpu:1 --ntasks-per-node=1 --job-name=spl_distill \
 python main_kd.py \
-    --temperature 10 --teacher-path experiments/cifar100/resnet110_wd0.0001/model_best.pth.tar --teacher-depth 110 \
-    -a resnet --dataset cifar100 --depth $3 --lr 0.1 --train-batch 64 --epochs 200 --schedule 80 130 161 --gamma 0.1 --wd 1e-4 \
+    --temperature $3 --teacher-path experiments/$6/baseline/resnet$4_wd0.0001/model_best.pth.tar --teacher-depth $4 \
     --loss-fun $2 \
-    $4 \
+    -a resnet --depth $5 --dataset $6 --lr 0.1 --train-batch 64 --epochs 200 --schedule 80 130 161 --gamma 0.1 --wd 1e-4 \
+    $7 \
