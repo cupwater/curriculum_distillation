@@ -70,7 +70,6 @@ class PartKDlossbyRemoveLowConfidenceData(nn.Module):
         origin_q = F.softmax(gt_logits / self.T, dim=1)
         gt_prob = origin_q[range(labels.size(0)), labels.detach()]
         selected_index = gt_prob > self.threshold
-
         p = F.softmax(pred_logits[selected_index, :] / self.T, dim=1)
         q = F.softmax(gt_logits[selected_index, :] / self.T, dim=1)
         loss_pkd = torch.mean( -torch.dot(q.view(-1), (torch.log((p+self.eps) / (q+self.eps))).view(-1))) * self.alpha + F.cross_entropy(pred_logits, labels) * (1. - self.alpha)
