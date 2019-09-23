@@ -29,7 +29,7 @@ class L2Loss(nn.Module):
 
 # knowledge distillation
 class KDLoss(nn.Module):
-    def __init__(self, T=5, alpha=1.0, eps=1e-8, num_classes=10):
+    def __init__(self, T=5, alpha=1.0, eps=1e-8, num_classes=10, threshold=0.1):
         super(KDLoss, self).__init__()
         self.eps=eps
         self.T = T
