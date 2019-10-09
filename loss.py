@@ -29,7 +29,7 @@ class L2Loss(nn.Module):
 
 # knowledge distillation
 class KDLoss(nn.Module):
-    def __init__(self, T=5, alpha=1.0, eps=1e-8, num_classes=10):
+    def __init__(self, T=5, alpha=1.0, eps=1e-8, num_classes=10, threshold=0.1):
         super(KDLoss, self).__init__()
         self.eps=eps
         self.T = T
@@ -39,6 +39,42 @@ class KDLoss(nn.Module):
         q = F.softmax(gt_logits / self.T, dim=1)
         loss_kl = torch.mean( -torch.dot(q.view(-1), (torch.log((p+self.eps) / (q+self.eps))).view(-1))) * self.alpha + F.cross_entropy(pred_logits, labels) * (1. - self.alpha)
         return loss_kl
+
+# knowledge distillation
+class PartCElossbyRemoveLowConfidenceData(nn.Module):
+    def __init__(self, T=5, alpha=1.0, eps=1e-8, num_classes=10, threshold=0.1):
+        super(PartCElossbyRemoveLowConfidenceData, self).__init__()
+        self.eps=eps
+        self.T = T
+        self.alpha = alpha
+        self.threshold = threshold
+    def forward(self, pred_logits, gt_logits, labels):
+        origin_q = F.softmax(gt_logits / self.T, dim=1)
+        gt_prob = origin_q[range(labels.size(0)), labels.detach()]
+        selected_index = gt_prob > self.threshold
+        
+        #pdb.set_trace()
+        loss_pce = F.cross_entropy(pred_logits[selected_index, :], labels[selected_index])
+        return loss_pce
+
+
+# knowledge distillation
+class PartKDlossbyRemoveLowConfidenceData(nn.Module):
+    def __init__(self, T=5, alpha=1.0, eps=1e-8, num_classes=10, threshold=0.1):
+        super(PartKDlossbyRemoveLowConfidenceData, self).__init__()
+        self.eps=eps
+        self.T = T
+        self.alpha = alpha
+        self.threshold = threshold
+    def forward(self, pred_logits, gt_logits, labels):
+        origin_q = F.softmax(gt_logits / self.T, dim=1)
+        gt_prob = origin_q[range(labels.size(0)), labels.detach()]
+        selected_index = gt_prob > self.threshold
+        p = F.softmax(pred_logits[selected_index, :] / self.T, dim=1)
+        q = F.softmax(gt_logits[selected_index, :] / self.T, dim=1)
+        loss_pkd = torch.mean( -torch.dot(q.view(-1), (torch.log((p+self.eps) / (q+self.eps))).view(-1))) * self.alpha + F.cross_entropy(pred_logits, labels) * (1. - self.alpha)
+        #pdb.set_trace()
+        return loss_pkd
 
 # knowledge distillation
 class AntiCurriculumKDLoss(nn.Module):
