@@ -120,8 +120,8 @@ kd_loss_fun.cuda()
 if args.specify_path != '':
     args.save_path = args.specify_path
 else :
-    args.save_path = 'experiments/' + args.dataset + '/adjust_lr_' + args.loss_fun + '/' + args.teacher_arch + str(args.teacher_depth)  + '_' + args.loss_fun \
-                    + '_' + args.arch + str(args.depth) + '_wd' + str(args.weight_decay) + '_T' + str(args.temperature) + '_lr' + str(args.lr) + '_threshold' + str(args.pce_threshold)
+    args.save_path = 'experiments/' + args.dataset + '/reverse_kd/' + args.teacher_arch + str(args.teacher_depth)  + '_' + args.loss_fun \
+                    + '_' + args.arch + str(args.depth) + '_wd' + str(args.weight_decay) + '_T' + str(args.temperature) + '_lr' + str(args.lr)
 if not os.path.isdir(args.save_path):
     os.makedirs(args.save_path)
 print(args.save_path)
