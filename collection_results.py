@@ -25,9 +25,8 @@ for path,dir_list,file_list in g:
 
                 _top1_list = [float(x.split('\t')[5]) for x in _log] 
                 top1 = max(_top1_list)
-                name = 'resnet_' + depth + '_' + arch_name.split('_')[0].replace('x', '') if 'x' in arch_name else '1x'
-                res_dict[name] = str(top1) + '\t' + str(flops) + '\t' + str(parameters)
+                name = 'resnet_' + str(depth) + '_' + (arch_name.split('_')[1] if 'x' in arch_name else '1x')
+                res_dict[name] = str(top1) + ' ' + str(flops) + ' ' + str(parameters)
 
-print(res_dict)
 for k, v in res_dict.items():
-    print(str(k) + '\t' + str(v))
+    print(k + ' ' + v)
