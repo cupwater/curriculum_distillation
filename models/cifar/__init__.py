@@ -64,6 +64,9 @@ Densenet-161             22.35           6.20
 from .alexnet import *
 from .vgg import *
 from .resnet import *
+from .resnet_gate import *
+from .cifarnet import *
+from .cifarnet_gate import *
 from .resnet_width import *
 from .resnet_at import *
 from .resnet_feat_at import *
