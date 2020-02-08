@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
+import math
 import pdb
 
 __all__ = ['cifarnet_gate']
@@ -55,19 +56,23 @@ class GatedConv(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, gated=True):
         super(GatedConv, self).__init__()
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size,
-                              stride=stride, padding=padding, bias=False)
-        #self.bn = nn.BatchNorm2d(out_channels, affine=False)
+                              stride=stride, padding=padding)
         self.bn = nn.BatchNorm2d(out_channels)
+        #self.bn = nn.BatchNorm2d(out_channels, affine=False)
 
         self.gate = nn.Linear(in_channels, out_channels)
-        self.beta = nn.Parameter(torch.Tensor(out_channels)).cuda()
+        #self.beta = nn.Parameter(torch.Tensor(out_channels))
+        #nn.init.zeros_(self.beta)
+
         self.ratio = _Graph.get_global_var('ratio')
+        # init the parameters of gate
+        self.gate.weight.data.normal_(0, math.sqrt(2. / out_channels))
+        nn.init.ones_(self.gate.bias)
 
     # add regurization for the gate, l1, l2 norm
     def regurizer(self, x):
-        loss = torch.sum(torch.abs(x))
+        loss = torch.sum(torch.abs(x)) 
         return loss
-
 
     def forward(self, x):
         x = self.conv(x)
@@ -75,29 +80,26 @@ class GatedConv(nn.Module):
         x = F.relu(x)
         return x        
 
-    def gate_forward(self, x):
-        upsampled = F.avg_pool2d(x, x.shape[2])
-        upsampled = upsampled.view(x.shape[0], x.shape[1])
-        gates = F.relu(self.gate(upsampled))
-        if self.training:
-            _Graph.append_tensor('gate_values', gates)
 
-        beta = self.beta.repeat(x.shape[0], 1)
-        #self.ratio = _Graph.get_global_var('ratio')
+    def gate_forward(self, x):
+        upsampled = F.avg_pool2d(torch.abs(x), x.shape[2])
+        ss = upsampled.view(x.shape[0], x.shape[1])
+
+        o_gate = self.gate(ss.detach())
+        o_gate = F.relu(o_gate)
+
+        regurize_loss = self.regurizer(o_gate)
 
         inactive_channels = int(self.conv.out_channels - round(self.conv.out_channels * self.ratio))
         if inactive_channels > 0:
-            inactive_idx = (-gates).topk(inactive_channels, 1)[1]
-            gates.scatter_(1, inactive_idx, 0)  # set inactive channels as zeros
-            beta.scatter_(1, inactive_idx, 0)
+            inactive_idx = (-o_gate).topk(inactive_channels, 1)[1]
+            o_gate.scatter_(1, inactive_idx, 0)  # set inactive channels as zeros
 
         x1 = self.conv(x)
         x = self.bn(x1)
-        x = gates.unsqueeze(2).unsqueeze(3) * x
-        x = x + beta.unsqueeze(2).unsqueeze(3)
+
+        x = o_gate.unsqueeze(2).unsqueeze(3) * x
         x = F.relu(x)
-        pdb.set_trace()
-        regurize_loss = self.regurizer(x)
         return x, regurize_loss
 
 
@@ -122,7 +124,7 @@ class CifarNet(nn.Module):
 
 
     def forward(self, x):
-        if self.gated and self.training:
+        if self.gated:
             return self.forward_gated(x)
         else:
             return self.forward_origin(x)
@@ -136,15 +138,17 @@ class CifarNet(nn.Module):
         x = self.drop3(x)
         x, regurize_loss4 = self.gconv4.gate_forward(x)
         x, regurize_loss5 = self.gconv5.gate_forward(x)
-        x ,regurize_loss6 = self.gconv6.gate_forward(x)
+        x, regurize_loss6 = self.gconv6.gate_forward(x)
         x = self.drop6(x)
-        x ,regurize_loss7 = self.gconv7.gate_forward(x)
+        x, regurize_loss7 = self.gconv7.gate_forward(x)
         x = self.pool(x)
         x = x.view(-1, 192)
         x = self.fc(x)
-        regurize_loss = regurize_loss0 + regurize_loss1 + regurize_loss2 + regurize_loss3 + regurize_loss4 + \
-                            regurize_loss5 + regurize_loss6 + regurize_loss7
-        return  x, regurize_loss
+        if self.training:
+            regurize_loss = regurize_loss0 + regurize_loss1 + regurize_loss2 + regurize_loss3 + regurize_loss4 + \
+                                regurize_loss5 + regurize_loss6 + regurize_loss7
+            return  x, regurize_loss
+        return x
 
     def forward_origin(self, x):
         x = self.gconv0(x)

@@ -101,10 +101,7 @@ assert args.dataset == 'cifar10' or args.dataset == 'cifar100', 'Dataset can onl
 
 
 # when specify_path is true, use the specify path
-if args.finetune:
-    args.save_path = 'experiments/' + args.dataset + '/dynamic_inference/fbs/' + args.arch + str(args.depth) + '_wd' + str(args.weight_decay) + '_r' + str(args.rscale)
-else :
-    args.save_path = 'experiments/' + args.dataset + '/dynamic_inference/fbs/' + args.arch + str(args.depth) + '_wd' + str(args.weight_decay) + '_r' + str(args.rscale) 
+args.save_path = 'experiments/' + args.dataset + '/dynamic_inference/fbs/' + args.arch + str(args.depth) + '_wd' + str(args.weight_decay) + '_skip' + str(1.0-args.ratio) + '_r' + str(args.rscale) 
 if not os.path.isdir(args.save_path):
     os.makedirs(args.save_path)
 
@@ -308,6 +305,7 @@ def train(trainloader, model, criterion, optimizer, epoch, use_cuda, args):
 
         loss = ce_loss + args.rscale * regurize_loss
         losses.update(loss.data[0], inputs.size(0))
+        #print(regurize_loss)
         
         loss.backward()
         optimizer.step()
