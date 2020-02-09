@@ -58,12 +58,7 @@ class GatedConv(nn.Module):
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size,
                               stride=stride, padding=padding)
         self.bn = nn.BatchNorm2d(out_channels)
-        #self.bn = nn.BatchNorm2d(out_channels, affine=False)
-
         self.gate = nn.Linear(in_channels, out_channels)
-        #self.beta = nn.Parameter(torch.Tensor(out_channels))
-        #nn.init.zeros_(self.beta)
-
         self.ratio = _Graph.get_global_var('ratio')
         # init the parameters of gate
         self.gate.weight.data.normal_(0, math.sqrt(2. / out_channels))
@@ -84,21 +79,20 @@ class GatedConv(nn.Module):
     def gate_forward(self, x):
         upsampled = F.avg_pool2d(torch.abs(x), x.shape[2])
         ss = upsampled.view(x.shape[0], x.shape[1])
-
         o_gate = self.gate(ss.detach())
         o_gate = F.relu(o_gate)
 
         regurize_loss = self.regurizer(o_gate)
-
+        index = torch.ones(o_gate.size()).cuda()
         inactive_channels = int(self.conv.out_channels - round(self.conv.out_channels * self.ratio))
         if inactive_channels > 0:
             inactive_idx = (-o_gate).topk(inactive_channels, 1)[1]
-            o_gate.scatter_(1, inactive_idx, 0)  # set inactive channels as zeros
-
+            index.scatter_(1, inactive_idx, 0)
+            #o_gate.scatter_(1, inactive_idx, 0)  # set inactive channels as zeros
         x1 = self.conv(x)
         x = self.bn(x1)
-
-        x = o_gate.unsqueeze(2).unsqueeze(3) * x
+        active_idx = (o_gate*index).unsqueeze(2).unsqueeze(3)
+        x = active_idx * x
         x = F.relu(x)
         return x, regurize_loss
 

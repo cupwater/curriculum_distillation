@@ -302,11 +302,8 @@ def train(trainloader, model, criterion, optimizer, epoch, use_cuda, args):
         top5.update(prec5[0], inputs.size(0))
         # compute gradient and do SGD step
         optimizer.zero_grad()
-
         loss = ce_loss + args.rscale * regurize_loss
         losses.update(loss.data[0], inputs.size(0))
-        #print(regurize_loss)
-        
         loss.backward()
         optimizer.step()
 
