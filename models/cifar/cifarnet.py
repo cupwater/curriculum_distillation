@@ -2,7 +2,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 
-__all__ = ['cifarnet']
+__all__ = ['cifarnet', 'cifarnet_half']
 
 def conv2d_same_padding(input, weight, bias=None, stride=[1, 1], dilation=[1, 1], groups=1):
     input_rows = input.size(2)
@@ -96,20 +96,21 @@ class GatedConv(nn.Module):
 
 
 class CifarNet(nn.Module):
-    def __init__(self, num_classes=100, gated=True):
+    def __init__(self, num_classes=100, gated=True, expansion=1):
+        self.expansion = expansion
         super(CifarNet, self).__init__()
-        self.gconv0 = GatedConv(3, 64, padding=0, gated=gated)
-        self.gconv1 = GatedConv(64, 64, gated=gated)
-        self.gconv2 = GatedConv(64, 128, stride=2, gated=gated)
-        self.gconv3 = GatedConv(128, 128, gated=gated)
+        self.gconv0 = GatedConv(3, int(64*expansion), padding=0, gated=gated)
+        self.gconv1 = GatedConv(int(64*expansion), int(64*expansion), gated=gated)
+        self.gconv2 = GatedConv(int(64*expansion), int(128*expansion), stride=2, gated=gated)
+        self.gconv3 = GatedConv(int(128*expansion), int(128*expansion), gated=gated)
         self.drop3 = nn.Dropout2d()
-        self.gconv4 = GatedConv(128, 128, gated=gated)
-        self.gconv5 = GatedConv(128, 192, stride=2, gated=gated)
-        self.gconv6 = GatedConv(192, 192, gated=gated)
+        self.gconv4 = GatedConv(int(128*expansion), int(128*expansion), gated=gated)
+        self.gconv5 = GatedConv(int(128*expansion), int(192*expansion), stride=2, gated=gated)
+        self.gconv6 = GatedConv(int(192*expansion), int(192*expansion), gated=gated)
         self.drop6 = nn.Dropout2d()
-        self.gconv7 = GatedConv(192, 192, gated=gated)
+        self.gconv7 = GatedConv(int(192*expansion), int(192*expansion), gated=gated)
         self.pool = nn.AvgPool2d(8)
-        self.fc = nn.Linear(192, num_classes)
+        self.fc = nn.Linear(int(192*expansion), num_classes)
 
     def forward(self, x):
         x = self.gconv0(x)
@@ -123,7 +124,7 @@ class CifarNet(nn.Module):
         x = self.drop6(x)
         x = self.gconv7(x)
         x = self.pool(x)
-        x = x.view(-1, 192)
+        x = x.view(-1, int(192*self.expansion))
         x = self.fc(x)
         return  x
 
@@ -143,6 +144,12 @@ class CifarNet(nn.Module):
     #    x = self.fc(x)
 
     #    return  x
+
+def cifarnet_half(**kwargs):
+    """
+    Constructs a ResNet model.
+    """
+    return CifarNet(expansion=0.5)
 
 def cifarnet(**kwargs):
     """

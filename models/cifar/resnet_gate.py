@@ -9,105 +9,130 @@ https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py
 '''
 import torch.nn as nn
 import torch
+import pdb
 import torch.nn.functional as F
 import math
-import pdb
-
 
 __all__ = ['resnet_gate']
 
-
-class GatedConv(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, ratio=0.9, bias=False):
-        super(GatedConv, self).__init__()
+class GatedConv_BN(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
+        super(GatedConv_BN, self).__init__()
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size,
-                              stride=stride, padding=padding, bias=False)
-        self.bn = nn.BatchNorm2d(out_channels)
+                              stride=stride, padding=padding)
 
         self.gate = nn.Linear(in_channels, out_channels)
-        self.beta = nn.Parameter(torch.Tensor(out_channels)).cuda()
-        self.ratio = ratio
-
+        self.ratio = _Graph.get_global_var('ratio')
+        self.bn = nn.BatchNorm2d(out_channels)
+        # init the parameters of gate
+        self.gate.weight.data.normal_(0, math.sqrt(2. / out_channels))
+        nn.init.ones_(self.gate.bias)
     # add regurization for the gate, l1, l2 norm
     def regurizer(self, x):
         loss = torch.sum(torch.abs(x))
         return loss
-        
 
     def forward(self, x):
-        upsampled = F.avg_pool2d(x, x.shape[2])
-        upsampled = upsampled.view(x.shape[0], x.shape[1])
-        gates = F.relu(self.gate(upsampled))
-        beta = self.beta.repeat(x.shape[0], 1)
-
-        #if self.ratio < 1:
-        inactive_channels = int(self.conv.out_channels - round(self.conv.out_channels * self.ratio))
-        inactive_idx = (-gates).topk(inactive_channels, 1)[1]
-        gates.scatter_(1, inactive_idx.detach(), 0)  # set inactive channels as zeros
-        beta.scatter_(1, inactive_idx.detach(), 0)
-
-        #pdb.set_trace()
         x = self.conv(x)
         x = self.bn(x)
-        x = gates.unsqueeze(2).unsqueeze(3) * x
-        x = x + beta.unsqueeze(2).unsqueeze(3)
-        x = F.relu(x)
+        return x
 
-        regurization = self.regurizer(x)
+    def forward_gate(self, x):
+        upsampled = F.avg_pool2d(torch.abs(x), x.shape[2])
+        ss = upsampled.view(x.shape[0], x.shape[1])
+        o_gate = self.gate(ss.detach())
+        o_gate = 1.5*F.sigmoid(o_gate)
 
-        return x, regurization
+        #pdb.set_trace()
+        rloss = self.regurizer(o_gate)
+        index = torch.ones(o_gate.size()).cuda()
+        inactive_channels = int(self.conv.out_channels - round(self.conv.out_channels * self.ratio))
+        if inactive_channels > 0:
+            inactive_idx = (-o_gate).topk(inactive_channels, 1)[1]
+            index.scatter_(1, inactive_idx, 0)
+
+        x = self.conv(x)
+        x = self.bn(x)
+        active_idx = (o_gate*index).unsqueeze(2).unsqueeze(3)
+        x = active_idx * x
+        return x, rloss
 
 
+class TorchGraph(object):
+    def __init__(self):
+        self._graph = {}
 
-def conv3x3(in_planes, out_planes, stride=1):
-    return GatedConv(in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False)
+    def add_tensor_list(self, name):
+        self._graph[name] = []
+
+    def append_tensor(self, name, val):
+        self._graph[name].append(val)
+
+    def clear_tensor_list(self, name):
+        self._graph[name].clear()
+
+    def get_tensor_list(self, name):
+        return self._graph[name]
+
+    def set_global_var(self, name, val):
+        self._graph[name] = val
+
+    def get_global_var(self, name):
+        return self._graph[name]
+
+
+_Graph = TorchGraph()
+_Graph.add_tensor_list('gate_values')
+
+regurize_loss_sum = 0
+
+def conv3x3_BN(in_planes, out_planes, stride=1):
+    return GatedConv_BN(in_planes, out_planes, kernel_size=3, stride=stride, padding=1)
     "3x3 convolution with padding"
-    #return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
-    #                 padding=1, bias=False)
-
 
 class BasicBlock(nn.Module):
     expansion = 1
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(BasicBlock, self).__init__()
-        self.conv1 = conv3x3(inplanes, planes, stride)
-        self.bn1 = nn.BatchNorm2d(planes)
+        self.conv1_bn = conv3x3_BN(inplanes, planes, stride)
         self.relu = nn.ReLU(inplace=True)
-        self.conv2 = conv3x3(planes, planes)
-        self.bn2 = nn.BatchNorm2d(planes)
+        self.conv2_bn = conv3x3_BN(planes, planes)
         self.downsample = downsample
         self.stride = stride
 
     def forward(self, x):
         residual = x
-
-        out = self.conv1(x)
-        out = self.bn1(out)
+        out= self.conv1_bn(x)
         out = self.relu(out)
-
-        out = self.conv2(out)
-        out = self.bn2(out)
-
+        out= self.conv2_bn(out)
         if self.downsample is not None:
             residual = self.downsample(x)
-
         out += residual
         out = self.relu(out)
-
         return out
+
+    def forward_gate(self, x):
+        residual = x
+        out, rloss = self.conv1_bn.forward_gate(x)
+        out = self.relu(out)
+        out, rloss = self.conv2_bn.forward_gate(out)
+        if self.downsample is not None:
+            residual = self.downsample(x)
+        out += residual
+        out = self.relu(out)
+        return out, rloss
 
 
 class Bottleneck(nn.Module):
     expansion = 4
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None):
+    def __init__(self, inplanes, planes, stride=1, downsample=None, gated=False):
         super(Bottleneck, self).__init__()
-        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
+        self.conv1_bn = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = GatedConv(planes, planes, kernel_size=3, stride=stride,
+        self.conv2_bn = GatedConv_BN(planes, planes, kernel_size=3, stride=stride,
                                padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes)
         self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
         self.bn3 = nn.BatchNorm2d(planes * 4)
         self.relu = nn.ReLU(inplace=True)
@@ -117,34 +142,53 @@ class Bottleneck(nn.Module):
 
     def forward(self, x):
         residual = x
-
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
 
-        out = self.conv2(out)
-        out = self.bn2(out)
+        out = self.conv2_bn(out)
         out = self.relu(out)
 
         out = self.conv3(out)
         out = self.bn3(out)
-
         if self.downsample is not None:
             residual = self.downsample(x)
 
         out += residual
         #out = self.relu(out)
-
         return out
+
+    def forward_gate(self, x):
+        residual = x
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out, rloss = self.conv2_bn.forward_gate(out)
+        out = self.relu(out)
+
+        out = self.conv3(out)
+        out = self.bn3(out)
+        if self.downsample is not None:
+            residual = self.downsample(x)
+
+        out += residual
+        #out = self.relu(out)
+        return out, rloss
+
 
 
 class ResNet(nn.Module):
 
-    def __init__(self, depth, num_classes=100):
+    def __init__(self, depth, num_classes=100, gated=False, ratio=1.0):
         super(ResNet, self).__init__()
         # Model type specifies number of layers for CIFAR-10 model
         assert (depth - 2) % 6 == 0, 'depth should be 6n+2'
         n = (depth - 2) // 6
+
+        _Graph.set_global_var('ratio', ratio)
+
+        self.gated = gated
 
         block = Bottleneck if depth >=44 else BasicBlock
 
@@ -171,9 +215,11 @@ class ResNet(nn.Module):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                nn.Conv2d(self.inplanes, planes * block.expansion,
-                          kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(planes * block.expansion),
+                GatedConv_BN(self.inplanes, planes * block.expansion,
+                            kernel_size=1, stride=stride, padding=0)
+                #nn.Conv2d(self.inplanes, planes * block.expansion,
+                #          kernel_size=1, stride=stride, bias=False),
+                #nn.BatchNorm2d(planes * block.expansion),
             )
 
         layers = []
@@ -184,24 +230,50 @@ class ResNet(nn.Module):
 
         return nn.Sequential(*layers)
 
+
     def forward(self, x):
+        if self.gated:
+            return self.forward_gate(x)
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)    # 32x32
+        x = self.layer1(x)  # 32x32
+        x = self.layer2(x)  # 16x16
+        x = self.layer3(x)  # 8x8
+        x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
+        return x
+
+    def forward_gate(self, x):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)    # 32x32
 
-        x = self.layer1(x)  # 32x32
-        x = self.layer2(x)  # 16x16
-        x = self.layer3(x)  # 8x8
+        regurize_loss_sum = 0
+        for i in range(len(self.layer1)):
+            x, rloss = self.layer1[i].forward_gate(x)
+            regurize_loss_sum += rloss
+        for i in range(len(self.layer2)):
+            x, rloss = self.layer2[i].forward_gate(x)
+            regurize_loss_sum += rloss
+        for i in range(len(self.layer3)):
+            x, rloss = self.layer3[i].forward_gate(x)
+            regurize_loss_sum += rloss
+
+        #x, rloss = self.layer1(x)  # 32x32
+        #x, rloss = self.layer2(x)  # 16x16
+        #x, rloss = self.layer3(x)  # 8x8
 
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
         x = self.fc(x)
+        if not self.training:
+            return x
+        return x, regurize_loss_sum
 
-        return x
-
-
-def resnet_gate(**kwargs):
+def resnet_gate(depth, num_classes=100, gated=False, ratio=1.0):
     """
     Constructs a ResNet model.
     """
-    return ResNet(**kwargs)
+    return ResNet(depth, num_classes=num_classes, gated=gated, ratio=ratio)

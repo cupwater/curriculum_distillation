@@ -184,6 +184,7 @@ def main():
         model = models.__dict__[args.arch](
                     num_classes=num_classes,
                     depth=args.depth,
+                    gated=args.gated
                 )
     else:
         model = models.__dict__[args.arch](num_classes=num_classes, gated=args.gated, ratio=args.ratio)
@@ -204,6 +205,14 @@ def main():
         test_loss, test_top1, test_top5 = test(testloader, model, criterion, start_epoch, use_cuda)
         print(' Test Loss:  %.8f, Test top1:  %.2f, Test top5' % (test_loss, test_top1, test_top5))
         return
+
+    if args.finetune:
+        # Load checkpoint.
+        print('==> finetune a pretrained model..')
+        print(args.model_path)
+        assert os.path.isfile(args.model_path), 'Error: no checkpoint directory found!'
+        checkpoint = torch.load(args.model_path)
+        model.load_state_dict(checkpoint['state_dict'], strict=False)
 
     # Resume
     title = 'cifar-10-' + args.arch
@@ -227,14 +236,6 @@ def main():
     else:
         logger = Logger(os.path.join(args.save_path, 'log.txt'), title=title)
         logger.set_names(['Learning Rate', 'Train Loss', 'Valid Loss', 'Train top1', 'Train top5', 'Valid top1.', 'Valid top5'])
-
-    if args.finetune:
-        # Load checkpoint.
-        print('==> finetune a pretrained model..')
-        print(args.model_path)
-        assert os.path.isfile(args.model_path), 'Error: no checkpoint directory found!'
-        checkpoint = torch.load(args.model_path)
-        model.load_state_dict(checkpoint['state_dict'], strict=False)
 
 
     # Train and val
