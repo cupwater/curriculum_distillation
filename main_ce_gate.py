@@ -297,15 +297,15 @@ def train(trainloader, model, criterion, optimizer, epoch, use_cuda, args):
             regurize_loss = 0
             regurize_losses.update(0, inputs.size(0))
         ce_loss = criterion(outputs, targets)
-        ce_losses.update(ce_loss.data[0], inputs.size(0))
+        ce_losses.update(ce_loss.item(), inputs.size(0))
         # measure accuracy and record loss
         prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
-        top1.update(prec1[0], inputs.size(0))
-        top5.update(prec5[0], inputs.size(0))
+        top1.update(prec1.item(), inputs.size(0))
+        top5.update(prec5.item(), inputs.size(0))
         # compute gradient and do SGD step
         optimizer.zero_grad()
         loss = ce_loss + args.rscale * regurize_loss
-        losses.update(loss.data[0], inputs.size(0))
+        losses.update(loss.item(), inputs.size(0))
         loss.backward()
         optimizer.step()
 
@@ -337,7 +337,8 @@ def test(testloader, model, criterion, epoch, use_cuda):
 
         if use_cuda:
             inputs, targets = inputs.cuda(), targets.cuda()
-        inputs, targets = torch.autograd.Variable(inputs, volatile=True), torch.autograd.Variable(targets)
+        with torch.no_grad():
+            inputs, targets = torch.autograd.Variable(inputs), torch.autograd.Variable(targets)
         # compute output
         outputs= model(inputs)
         loss = criterion(outputs, targets)
