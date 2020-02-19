@@ -184,7 +184,8 @@ def main():
         model = models.__dict__[args.arch](
                     num_classes=num_classes,
                     depth=args.depth,
-                    gated=args.gated
+                    gated=args.gated,
+                    ratio=args.ratio
                 )
     else:
         model = models.__dict__[args.arch](num_classes=num_classes, gated=args.gated, ratio=args.ratio)
