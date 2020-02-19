@@ -86,6 +86,8 @@ parser.add_argument('-f', '--finetune', dest='finetune', action='store_true',
                     help='finetune a pretrained_model')
 parser.add_argument('--model-path', type=str, default='n', help='path of pretrained model')
 
+parser.add_argument('--multi-num', type=int, default=2, help='the number of multiple slimmable')
+
 
 args = parser.parse_args()
 state = {k: v for k, v in args._get_kwargs()}
@@ -95,10 +97,7 @@ assert args.dataset == 'cifar10' or args.dataset == 'cifar100', 'Dataset can onl
 
 
 # when specify_path is true, use the specify path
-if args.finetune:
-    args.save_path = 'experiments/' + args.dataset + '/finetune/' + args.arch + str(args.depth) + '_wd' + str(args.weight_decay) 
-else :
-    args.save_path = 'experiments/' + args.dataset + '/baseline/' + args.arch + str(args.depth) + '_wd' + str(args.weight_decay) 
+args.save_path = 'experiments/' + args.dataset + '/slimmable/' + args.arch + str(args.depth) + '_wd' + str(args.weight_decay) 
 if not os.path.isdir(args.save_path):
     os.makedirs(args.save_path)
 
@@ -240,8 +239,8 @@ def main():
 
         print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
 
-        train_loss, train_top1, train_top5 = train(trainloader, model, criterion, optimizer, epoch, use_cuda)
-        test_loss, test_top1, test_top5 = test(testloader, model, criterion, epoch, use_cuda)
+        train_loss, train_top1, train_top5 = train(trainloader, model, criterion, optimizer, epoch, use_cuda, args)
+        test_loss, test_top1, test_top5 = test(testloader, model, criterion, epoch, use_cuda, args)
 
         # append logger file
         logger.append([state['lr'], train_loss, test_loss, train_top1, train_top5, test_top1, test_top5])
@@ -264,15 +263,20 @@ def main():
     print('Best acc:')
     print(best_acc)
 
-def train(trainloader, model, criterion, optimizer, epoch, use_cuda):
+def train(trainloader, model, criterion, optimizer, epoch, use_cuda, args):
     # switch to train mode
     model.train()
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
-    top1 = AverageMeter()
-    top5 = AverageMeter()
+    losses_list = []
+    top1_list = []
+    top5_list = []
+    for i in range(args.multi_num):
+        losses_list.append(AverageMeter())
+        top1_list.append(AverageMeter())
+        top5_list.append(AverageMeter())
     end = time.time()
 
     for batch_idx, (inputs, targets) in enumerate(trainloader):
@@ -283,35 +287,51 @@ def train(trainloader, model, criterion, optimizer, epoch, use_cuda):
         inputs, targets = torch.autograd.Variable(inputs), torch.autograd.Variable(targets)
         # compute output
         outputs = model(inputs)
-        loss = criterion(outputs, targets)
+        loss_sum = 0
+        for _idx in range(len(outputs)):
+            loss = criterion(outputs[_idx], targets)
+            losses_list[_idx].update(loss.item(), inputs.size(0))
+            loss_sum += loss
+            # measure accuracy and record loss
+            prec1, prec5 = accuracy(outputs[_idx].data, targets.data, topk=(1, 5))
+            top1_list[_idx].update(prec1.item(), inputs.size(0))
+            top5_list[_idx].update(prec5.item(), inputs.size(0))
         # measure accuracy and record loss
-        prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
-        losses.update(loss.item(), inputs.size(0))
-        top1.update(prec1.item(), inputs.size(0))
-        top5.update(prec5.item(), inputs.size(0))
+        losses.update(loss_sum.item(), inputs.size(0))
         # compute gradient and do SGD step
         optimizer.zero_grad()
-        loss.backward()
+        loss_sum.backward()
         optimizer.step()
 
-        progress_bar(batch_idx, len(trainloader), 'Loss: %.2f | Top1: %.2f | Top5: %.2f'
-                    % (losses.avg, top1.avg, top5.avg))
+        if args.multi_num == 1:
+            progress_bar(batch_idx, len(trainloader), 'Loss: %.2f | Top1: %.2f | Top5: %.2f'
+                    % (losses.avg, top1_list[0].avg, top5_list[0].avg))
+        elif args.multi_num == 2:
+            progress_bar(batch_idx, len(trainloader), 'Loss: %.2f | Top1_1: %.2f | loss1: %.2f | Top1_2: %.2f | loss2: %.2f'
+                    % (losses.avg, top1_list[0].avg, losses_list[0].avg, top1_list[1].avg, losses_list[1].avg))
+        elif args.multi_num == 3:
+            progress_bar(batch_idx, len(trainloader), 'Loss: %.2f | Top1_1: %.2f | loss1: %.2f | Top1_2: %.2f | loss2: %.2f | Top1_3: %.2f | loss3: %.2f'
+                    % (losses.avg, top1_list[0].avg, losses_list[0].avg, top1_list[1].avg, losses_list[1].avg, top1_list[2].avg, losses_list[2].avg))
 
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
 
-    return (losses.avg, top1.avg, top5.avg)
+    return (losses.avg, top1_list[0].avg, top5_list[0].avg)
 
-def test(testloader, model, criterion, epoch, use_cuda):
+def test(testloader, model, criterion, epoch, use_cuda, args):
     global best_acc
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
-    top1 = AverageMeter()
-    top5 = AverageMeter()
-
+    losses_list = []
+    top1_list = []
+    top5_list = []
+    for i in range(args.multi_num):
+        losses_list.append(AverageMeter())
+        top1_list.append(AverageMeter())
+        top5_list.append(AverageMeter())
     # switch to evaluate mode
     model.eval()
     end = time.time()
@@ -326,21 +346,37 @@ def test(testloader, model, criterion, epoch, use_cuda):
             inputs, targets = torch.autograd.Variable(inputs), torch.autograd.Variable(targets)
         # compute output
         outputs = model(inputs)
-        loss = criterion(outputs, targets)
+        #for _out in outputs:
+        #    loss += criterion(_out, targets)
+        #    # measure accuracy and record loss
+        #    prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
+        loss_sum = 0
+        for _idx in range(len(outputs)):
+            loss = criterion(outputs[_idx], targets)
+            losses_list[_idx].update(loss.item(), inputs.size(0))
+            loss_sum += loss
+            # measure accuracy and record loss
+            prec1, prec5 = accuracy(outputs[_idx].data, targets.data, topk=(1, 5))
+            top1_list[_idx].update(prec1.item(), inputs.size(0))
+            top5_list[_idx].update(prec5.item(), inputs.size(0))
         # measure accuracy and record loss
-        prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
+        losses.update(loss_sum.item(), inputs.size(0))
 
-        losses.update(loss.item(), inputs.size(0))
-        top1.update(prec1.item(), inputs.size(0))
-        top5.update(prec5.item(), inputs.size(0))
-
-        progress_bar(batch_idx, len(testloader), 'Loss: %.2f | Top1: %.2f | Top5: %.2f'
-                    % (losses.avg, top1.avg, top5.avg))
+        if args.multi_num == 1:
+            progress_bar(batch_idx, len(testloader), 'Loss: %.2f | Top1: %.2f | Top5: %.2f'
+                    % (losses.avg, top1_list[0].avg, top5_list[0].avg))
+        elif args.multi_num == 2:
+            progress_bar(batch_idx, len(testloader), 'Loss: %.2f | Top1_1: %.2f | loss1: %.2f | Top1_2: %.2f | loss2: %.2f'
+                    % (losses.avg, top1_list[0].avg, losses_list[0].avg, top1_list[1].avg, losses_list[1].avg))
+        elif args.multi_num == 3:
+            progress_bar(batch_idx, len(testloader), 'Loss: %.2f | Top1_1: %.2f | loss1: %.2f | Top1_2: %.2f | loss2: %.2f | Top1_3: %.2f | loss3: %.2f'
+                    % (losses.avg, top1_list[0].avg, losses_list[0].avg, top1_list[1].avg, losses_list[1].avg, top1_list[2].avg, losses_list[2].avg))
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
 
-    return (losses.avg, top1.avg, top5.avg)
+    #return (losses.avg, top1.avg, top5.avg)
+    return (losses.avg, top1_list[0].avg, top5_list[0].avg)
 
 def save_checkpoint(state, is_best, save_path='experiment/template', filename='checkpoint.pth.tar'):
     filepath = os.path.join(save_path, filename)

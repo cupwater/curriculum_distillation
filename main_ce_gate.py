@@ -32,6 +32,15 @@ model_names = sorted(name for name in models.__dict__
 
 parser = argparse.ArgumentParser(description='PyTorch CIFAR100 Training')
 
+
+parser.add_argument('--rscale', default=0.001, type=float, help='regurization loss scale')
+parser.add_argument('--ratio', default=1, type=float, help='the ratio of execution computation')
+parser.add_argument('--gated', dest='gated', action='store_true',
+                    help='whether to open the gate for dynamic inference')
+parser.add_argument('-f', '--finetune', dest='finetune', action='store_true',
+                    help='finetune a pretrained_model')
+parser.add_argument('--model-path', type=str, default='n', help='path of pretrained model')
+
 parser.add_argument('--teacher-path', default='template/checkpoint.pth.tar', type=str)
 parser.add_argument('--teacher-depth', default=32, type=int)
 parser.add_argument('--teacher-arch', default='resnet', type=str)
@@ -82,9 +91,6 @@ parser.add_argument('-r', '--resume', dest='resume', action='store_true',
 parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                     help='evaluate model on validation set')
 
-parser.add_argument('-f', '--finetune', dest='finetune', action='store_true',
-                    help='finetune a pretrained_model')
-parser.add_argument('--model-path', type=str, default='n', help='path of pretrained model')
 
 
 args = parser.parse_args()
@@ -95,10 +101,7 @@ assert args.dataset == 'cifar10' or args.dataset == 'cifar100', 'Dataset can onl
 
 
 # when specify_path is true, use the specify path
-if args.finetune:
-    args.save_path = 'experiments/' + args.dataset + '/finetune/' + args.arch + str(args.depth) + '_wd' + str(args.weight_decay) 
-else :
-    args.save_path = 'experiments/' + args.dataset + '/baseline/' + args.arch + str(args.depth) + '_wd' + str(args.weight_decay) 
+args.save_path = 'experiments/' + args.dataset + '/dynamic_inference/fbs/' + args.arch + str(args.depth) + '_wd' + str(args.weight_decay) + '_skip' + str(1.0-args.ratio) + '_r' + str(args.rscale) 
 if not os.path.isdir(args.save_path):
     os.makedirs(args.save_path)
 
@@ -181,9 +184,11 @@ def main():
         model = models.__dict__[args.arch](
                     num_classes=num_classes,
                     depth=args.depth,
+                    gated=args.gated,
+                    ratio=args.ratio
                 )
     else:
-        model = models.__dict__[args.arch](num_classes=num_classes)
+        model = models.__dict__[args.arch](num_classes=num_classes, gated=args.gated, ratio=args.ratio)
 
     model = torch.nn.DataParallel(model).cuda()
     cudnn.benchmark = True
@@ -201,6 +206,14 @@ def main():
         test_loss, test_top1, test_top5 = test(testloader, model, criterion, start_epoch, use_cuda)
         print(' Test Loss:  %.8f, Test top1:  %.2f, Test top5' % (test_loss, test_top1, test_top5))
         return
+
+    if args.finetune:
+        # Load checkpoint.
+        print('==> finetune a pretrained model..')
+        print(args.model_path)
+        assert os.path.isfile(args.model_path), 'Error: no checkpoint directory found!'
+        checkpoint = torch.load(args.model_path)
+        model.load_state_dict(checkpoint['state_dict'], strict=False)
 
     # Resume
     title = 'cifar-10-' + args.arch
@@ -225,14 +238,6 @@ def main():
         logger = Logger(os.path.join(args.save_path, 'log.txt'), title=title)
         logger.set_names(['Learning Rate', 'Train Loss', 'Valid Loss', 'Train top1', 'Train top5', 'Valid top1.', 'Valid top5'])
 
-    if args.finetune:
-        # Load checkpoint.
-        print('==> finetune a pretrained model..')
-        print(args.model_path)
-        assert os.path.isfile(args.model_path), 'Error: no checkpoint directory found!'
-        checkpoint = torch.load(args.model_path)
-        model.load_state_dict(checkpoint['state_dict'])
-
 
     # Train and val
     for epoch in range(start_epoch, args.epochs):
@@ -240,7 +245,7 @@ def main():
 
         print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
 
-        train_loss, train_top1, train_top5 = train(trainloader, model, criterion, optimizer, epoch, use_cuda)
+        train_loss, train_top1, train_top5 = train(trainloader, model, criterion, optimizer, epoch, use_cuda, args)
         test_loss, test_top1, test_top5 = test(testloader, model, criterion, epoch, use_cuda)
 
         # append logger file
@@ -264,13 +269,15 @@ def main():
     print('Best acc:')
     print(best_acc)
 
-def train(trainloader, model, criterion, optimizer, epoch, use_cuda):
+def train(trainloader, model, criterion, optimizer, epoch, use_cuda, args):
     # switch to train mode
     model.train()
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
+    ce_losses = AverageMeter()
+    regurize_losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
     end = time.time()
@@ -282,20 +289,28 @@ def train(trainloader, model, criterion, optimizer, epoch, use_cuda):
             inputs, targets = inputs.cuda(), targets.cuda(async=True)
         inputs, targets = torch.autograd.Variable(inputs), torch.autograd.Variable(targets)
         # compute output
-        outputs = model(inputs)
-        loss = criterion(outputs, targets)
+        if args.gated:
+            outputs, regurize_loss = model(inputs)
+            regurize_losses.update(regurize_loss.data[0], inputs.size(0))
+        else :
+            outputs = model(inputs)
+            regurize_loss = 0
+            regurize_losses.update(0, inputs.size(0))
+        ce_loss = criterion(outputs, targets)
+        ce_losses.update(ce_loss.item(), inputs.size(0))
         # measure accuracy and record loss
         prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
-        losses.update(loss.item(), inputs.size(0))
         top1.update(prec1.item(), inputs.size(0))
         top5.update(prec5.item(), inputs.size(0))
         # compute gradient and do SGD step
         optimizer.zero_grad()
+        loss = ce_loss + args.rscale * regurize_loss
+        losses.update(loss.item(), inputs.size(0))
         loss.backward()
         optimizer.step()
 
-        progress_bar(batch_idx, len(trainloader), 'Loss: %.2f | Top1: %.2f | Top5: %.2f'
-                    % (losses.avg, top1.avg, top5.avg))
+        progress_bar(batch_idx, len(trainloader), 'loss: %.2f | ce_loss: %.2f | regurize_loss: %.2f | Top1: %.2f | Top5: %.2f'
+                    % (losses.avg, ce_losses.avg, regurize_losses.avg, top1.avg, top5.avg))
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -325,14 +340,14 @@ def test(testloader, model, criterion, epoch, use_cuda):
         with torch.no_grad():
             inputs, targets = torch.autograd.Variable(inputs), torch.autograd.Variable(targets)
         # compute output
-        outputs = model(inputs)
+        outputs= model(inputs)
         loss = criterion(outputs, targets)
         # measure accuracy and record loss
         prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
 
-        losses.update(loss.item(), inputs.size(0))
-        top1.update(prec1.item(), inputs.size(0))
-        top5.update(prec5.item(), inputs.size(0))
+        losses.update(loss.data[0], inputs.size(0))
+        top1.update(prec1[0], inputs.size(0))
+        top5.update(prec5[0], inputs.size(0))
 
         progress_bar(batch_idx, len(testloader), 'Loss: %.2f | Top1: %.2f | Top5: %.2f'
                     % (losses.avg, top1.avg, top5.avg))

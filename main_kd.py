@@ -303,11 +303,11 @@ def train(trainloader, t_model, s_model, criterion, optimizer, epoch, use_cuda, 
         loss_kl = kd_loss_fun(s_outputs, t_outputs.detach(), targets)
         loss_ce = criterion(s_outputs, targets)
         loss = loss_kl
-        losses.update(loss.data[0], inputs.size(0))
-        losses_kl.update(loss_kl.data[0], inputs.size(0))
-        losses_ce.update(loss_ce.data[0], inputs.size(0))
-        top1.update(prec1[0], inputs.size(0))
-        top5.update(prec5[0], inputs.size(0))
+        losses.update(loss.item(), inputs.size(0))
+        losses_kl.update(loss_kl.item(), inputs.size(0))
+        losses_ce.update(loss_ce.item(), inputs.size(0))
+        top1.update(prec1.item(), inputs.size(0))
+        top5.update(prec5.item(), inputs.size(0))
         # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
@@ -347,7 +347,8 @@ def test(testloader, model, criterion, epoch, use_cuda, args):
         data_time.update(time.time() - end)
         if use_cuda:
             inputs, targets = inputs.cuda(), targets.cuda()
-        inputs, targets = torch.autograd.Variable(inputs, volatile=True), torch.autograd.Variable(targets)
+        with torch.no_grad():
+            inputs, targets = torch.autograd.Variable(inputs), torch.autograd.Variable(targets)
 
         # compute output
         outputs = model(inputs)
@@ -355,9 +356,9 @@ def test(testloader, model, criterion, epoch, use_cuda, args):
         loss = criterion(outputs, targets)
         # measure accuracy and record loss
         prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
-        losses.update(loss.data[0], inputs.size(0))
-        top1.update(prec1[0], inputs.size(0))
-        top5.update(prec5[0], inputs.size(0))
+        losses.update(loss.item(), inputs.size(0))
+        top1.update(prec1.item(), inputs.size(0))
+        top5.update(prec5.item(), inputs.size(0))
 
         # measure accuracy and record loss
         batch_time.update(time.time() - end)
