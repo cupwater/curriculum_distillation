@@ -13,7 +13,9 @@ import pdb
 import torch.nn.functional as F
 import math
 
-__all__ = ['resnet_gate']
+from models.cifar.slimmable_ops import *
+
+__all__ = ['resnet_1multi_gate', 'resnet_2multi_gate', 'resnet_3multi_gate', 'resnet_4multi_gate']
 
 class GatedSlimmableConv_BN(nn.Module):
     def __init__(self, in_planes, out_planes, kernel_size=3, stride=1, padding=1, bias=False):
@@ -28,15 +30,19 @@ class GatedSlimmableConv_BN(nn.Module):
 
         # add regurization for the gate, l1, l2 norm
         self.width_multi_list = get_value('width_multi_list')
+        self.gated = get_value('gated')
+        
+        if self.gated:
+            # adding unique batchnorm for each path
+            for _idx in range(len(self.width_multi_list)):
+                bns.append(nn.BatchNorm2d(out_planes))
+            self.bn = nn.ModuleList(bns)
+        else:
+            self.bn = SlimmableBatchNorm2d(out_planes)
+        
         self.in_planes_list = []
         self.out_planes_list = []
-        gate = []
-
-        # adding unique batchnorm for each path
-        for _idx in range(len(self.width_multi_list)):
-            bns.append(nn.BatchNorm2d(out_planes))
-        self.bn = nn.ModuleList(bns)
-
+        gates = []
         # eadding unique gate for each path
         for _idx in range(len(self.width_multi_list)):
             _in_planes = int(self.width_multi_list[_idx]*in_planes)
@@ -44,8 +50,8 @@ class GatedSlimmableConv_BN(nn.Module):
             self.in_planes_list.append( _in_planes )
             self.out_planes_list.append( _out_planes )
             gates.append(nn.Linear(_in_planes, out_planes))
-
         self.gates = nn.ModuleList(gates)
+        
         # init the parameters of gates
         for _idx in range(len(self.gates)):
             self.gates[_idx].weight.data.normal_(0, math.sqrt(2. / out_planes))
@@ -89,7 +95,7 @@ class GatedSlimmableConv_BN(nn.Module):
                 index.scatter_(1, inactive_idx, 0)
             
             x = self.conv(x)
-            x = self.bn(x_list[_idx])
+            x = self.bn[_idx](x_list[_idx])
             active_idx = (o_gate*index).unsqueeze(2).unsqueeze(3)
             x = active_idx * x
             out.append(x)
@@ -197,11 +203,9 @@ class Bottleneck(nn.Module):
         #out = self.relu(out)
         return out_list, rloss
 
-
-
 class ResNet(nn.Module):
 
-    def __init__(self, depth, num_classes=100):
+    def __init__(self, depth, num_classes=100, gated=gated):
         super(ResNet, self).__init__()
         # Model type specifies number of layers for CIFAR-10 model
         assert (depth - 2) % 6 == 0, 'depth should be 6n+2'
@@ -209,6 +213,7 @@ class ResNet(nn.Module):
         n = (depth - 2) // 6
 
         self.width_multi_list = get_value('width_multi_list')
+        set_value('gated', gated)
         self.gated = get_value('gated')
 
         block = Bottleneck if depth >=44 else BasicBlock
@@ -223,7 +228,7 @@ class ResNet(nn.Module):
         self.layer2 = self._make_layer(block, 32, n, stride=2)
         self.layer3 = self._make_layer(block, 64, n, stride=2)
         self.avgpool = SlimmableAvgPool2d(8)
-        if self.gatd:
+        if not self.gated:
             self.fc = SlimmableLinear(64 * block.expansion, num_classes)
         else:
             fc = []
@@ -304,8 +309,39 @@ class ResNet(nn.Module):
             return x
         return x, regurize_loss_sum
 
-def resnet_gate(depth, num_classes=100, gated=False, ratio=1.0):
+# def resnet_gate(depth, num_classes=100, gated=False, ratio=1.0):
+#     """
+#     Constructs a ResNet model.
+#     """
+#     return ResNet(depth, num_classes=num_classes, gated=gated, ratio=ratio)
+
+
+def resnet_1multi_gate(depth, num_classes=100, gated=False):
     """
     Constructs a ResNet model.
     """
-    return ResNet(depth, num_classes=num_classes, gated=gated, ratio=ratio)
+    set_value('width_multi_list', [1.0])
+    return ResNet(depth, num_classes=num_classes, gated=gated)
+
+
+def resnet_3multi_gate(depth, num_classes=100, gated=False):
+    """
+    Constructs a ResNet model.
+    """
+    set_value('width_multi_list', [1.0, 0.8, 0.6])
+    return ResNet(depth, num_classes=num_classes, gated=gated)
+
+def resnet_2multi_gate(depth, num_classes=100, gated=False):
+    set_value('width_multi_list', [1.0, 0.8])
+    """
+    Constructs a ResNet model.
+    """
+    return ResNet(depth, num_classes=num_classes, gated=gated)
+
+def resnet_4multi_gate(depth, num_classes=100, gated=False):
+    set_value('width_multi_list', [1.0, 0.8, 0.6, 0.5])
+    """
+    Constructs a ResNet model.
+    """
+    return ResNet(depth, num_classes=num_classes, gated=gated)
+

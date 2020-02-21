@@ -66,6 +66,7 @@ from .vgg import *
 from .resnet import *
 from .resnet_multi import *
 from .resnet_gate import *
+from .resnet_multi_gate import *
 from .cifarnet import *
 from .cifarnet_gate import *
 from .resnet_width import *
