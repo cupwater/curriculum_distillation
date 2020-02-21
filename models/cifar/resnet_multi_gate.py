@@ -19,10 +19,6 @@ class GatedSlimmableConv_BN(nn.Module):
     def __init__(self, in_planes, out_planes, kernel_size=3, stride=1, padding=1, bias=False):
         super(GatedSlimmableConv_BN, self).__init__()
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride=stride, padding=padding)
-        #super(GatedSlimmableConv2d, self).__init__( in_planes, out_planes,
-        #    kernel_size, stride=stride, padding=padding, bias=bias
-        #)
-        self.bn = SlimmableBatchNorm2d(out_planes)
 
         self.in_planes = in_planes
         self.out_planes = out_planes
@@ -36,12 +32,17 @@ class GatedSlimmableConv_BN(nn.Module):
         self.out_planes_list = []
         gate = []
 
+        # adding unique batchnorm for each path
+        for _idx in range(len(self.width_multi_list)):
+            bns.append(nn.BatchNorm2d(out_planes))
+        self.bn = nn.ModuleList(bns)
+
+        # eadding unique gate for each path
         for _idx in range(len(self.width_multi_list)):
             _in_planes = int(self.width_multi_list[_idx]*in_planes)
             _out_planes = int(self.width_multi_list[_idx]*out_planes)
             self.in_planes_list.append( _in_planes )
             self.out_planes_list.append( _out_planes )
-            # each gate correspond to unique switch path
             gates.append(nn.Linear(_in_planes, out_planes))
 
         self.gates = nn.ModuleList(gates)
@@ -78,7 +79,7 @@ class GatedSlimmableConv_BN(nn.Module):
             ss = upsampled.view(x.shape[0], x.shape[1])
             o_gate = self.gates[_idx](ss.detach())
             o_gate = 1.5*F.sigmoid(o_gate)
-            rloss = self.regurizer(o_gate)
+            rloss += self.regurizer(o_gate)
 
             #pdb.set_trace()
             index = torch.ones(o_gate.size()).cuda()
@@ -88,42 +89,15 @@ class GatedSlimmableConv_BN(nn.Module):
                 index.scatter_(1, inactive_idx, 0)
             
             x = self.conv(x)
+            x = self.bn(x_list[_idx])
             active_idx = (o_gate*index).unsqueeze(2).unsqueeze(3)
             x = active_idx * x
-        x = self.bn(x)
-        return x, rloss
+            out.append(x)
+        return out, rloss
 
-
-class TorchGraph(object):
-    def __init__(self):
-        self._graph = {}
-
-    def add_tensor_list(self, name):
-        self._graph[name] = []
-
-    def append_tensor(self, name, val):
-        self._graph[name].append(val)
-
-    def clear_tensor_list(self, name):
-        self._graph[name].clear()
-
-    def get_tensor_list(self, name):
-        return self._graph[name]
-
-    def set_global_var(self, name, val):
-        self._graph[name] = val
-
-    def get_global_var(self, name):
-        return self._graph[name]
-
-
-_Graph = TorchGraph()
-_Graph.add_tensor_list('gate_values')
-
-regurize_loss_sum = 0
 
 def conv3x3_BN(in_planes, out_planes, stride=1):
-    return GatedConv_BN(in_planes, out_planes, kernel_size=3, stride=stride, padding=1)
+    return GatedSlimmableConv_BN(in_planes, out_planes, kernel_size=3, stride=stride, padding=1)
     "3x3 convolution with padding"
 
 class BasicBlock(nn.Module):
@@ -132,34 +106,39 @@ class BasicBlock(nn.Module):
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(BasicBlock, self).__init__()
         self.conv1_bn = conv3x3_BN(inplanes, planes, stride)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = SlimmableReLU(inplace=True)
         self.conv2_bn = conv3x3_BN(planes, planes)
         self.downsample = downsample
         self.stride = stride
 
-    def forward(self, x):
-        residual = x
-        out= self.conv1_bn(x)
+    def forward(self, x_list):
+        residual = x_list
+        out= self.conv1_bn(x_list)
         out = self.relu(out)
         out= self.conv2_bn(out)
         if self.downsample is not None:
-            residual = self.downsample(x)
-        out += residual
-        out = self.relu(out)
+            residual = self.downsample(x_list)
+        out_list = []
+        for _idx, (_x, _y) in enumerate(zip(out, residual)):
+            out_list.appdne(_x+_y)
+        out_list = self.relu(out_list)
+        out = self.relu(out_list)
         return out
 
-    def forward_gate(self, x):
-        residual = x
-        out, rloss = self.conv1_bn.forward_gate(x)
+    def forward_gate(self, x_list):
+        residual_list = x_list
+        out, rloss1 = self.conv1_bn.forward_gate(x_list)
         out = self.relu(out)
-        out, rloss = self.conv2_bn.forward_gate(out)
+        out, rloss2 = self.conv2_bn.forward_gate(out)
         if self.downsample is not None:
-            residual = self.downsample(x)
-        out += residual
-        out = self.relu(out)
-        return out, rloss
+            residual = self.downsample(x_list)
+        out_list = []
+        for _idx, (_x, _y) in enumerate(zip(out, residual)):
+            out_list.appdne(_x+_y)
+        out_list = self.relu(out_list)
+        return out_list, rloss1+rloss2
 
-
+# currently the slimmable bottleneck is not implemented
 class Bottleneck(nn.Module):
     expansion = 4
 
@@ -190,9 +169,12 @@ class Bottleneck(nn.Module):
         if self.downsample is not None:
             residual = self.downsample(x)
 
-        out += residual
+        out_list = []
+        for _idx, (_x, _y) in enumerate(zip(out, residual)):
+            out_list.appdne(_x+_y)
+        #out_ = self.relu(out_list)
         #out = self.relu(out)
-        return out
+        return out_list
 
     def forward_gate(self, x):
         residual = x
@@ -208,23 +190,26 @@ class Bottleneck(nn.Module):
         if self.downsample is not None:
             residual = self.downsample(x)
 
-        out += residual
+        out_list = []
+        for _idx, (_x, _y) in enumerate(zip(out, residual)):
+            out_list.appdne(_x+_y)
+        #out += residual
         #out = self.relu(out)
-        return out, rloss
+        return out_list, rloss
 
 
 
 class ResNet(nn.Module):
 
-    def __init__(self, depth, num_classes=100, gated=False, ratio=1.0):
+    def __init__(self, depth, num_classes=100):
         super(ResNet, self).__init__()
         # Model type specifies number of layers for CIFAR-10 model
         assert (depth - 2) % 6 == 0, 'depth should be 6n+2'
+        assert depth < 44, 'current only support basicblock'
         n = (depth - 2) // 6
 
-        _Graph.set_global_var('ratio', ratio)
-
-        self.gated = gated
+        self.width_multi_list = get_value('width_multi_list')
+        self.gated = get_value('gated')
 
         block = Bottleneck if depth >=44 else BasicBlock
 
@@ -233,11 +218,18 @@ class ResNet(nn.Module):
                                bias=False)
         self.bn1 = nn.BatchNorm2d(16)
         self.relu = nn.ReLU(inplace=True)
+        
         self.layer1 = self._make_layer(block, 16, n)
         self.layer2 = self._make_layer(block, 32, n, stride=2)
         self.layer3 = self._make_layer(block, 64, n, stride=2)
-        self.avgpool = nn.AvgPool2d(8)
-        self.fc = nn.Linear(64 * block.expansion, num_classes)
+        self.avgpool = SlimmableAvgPool2d(8)
+        if self.gatd:
+            self.fc = SlimmableLinear(64 * block.expansion, num_classes)
+        else:
+            fc = []
+            for i in range(len(self.width_multi_list)):
+                fc.append(nn.Linear(64*block_expansion, num_classes))
+            self.fc = nn.ModuleList(fc)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -251,8 +243,8 @@ class ResNet(nn.Module):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                GatedConv_BN(self.inplanes, planes * block.expansion,
-                            kernel_size=1, stride=stride, padding=0)
+                GatedSlimmableConv_BN(self.inplanes, planes * block.expansion,
+                            kernel_size=1, stride=stride, bias=False)
                 #nn.Conv2d(self.inplanes, planes * block.expansion,
                 #          kernel_size=1, stride=stride, bias=False),
                 #nn.BatchNorm2d(planes * block.expansion),
@@ -273,11 +265,20 @@ class ResNet(nn.Module):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)    # 32x32
-        x = self.layer1(x)  # 32x32
+        if self.gated:
+            x_list = []
+            for width_multi in get_value('width_multi_list'):
+                x_list.append(x[:, 0:int(width_multi*x.size(1)), :, :])
+        else:
+            x_list = [x, x, x]
+        x = self.layer1(x_list)  # 32x32
         x = self.layer2(x)  # 16x16
         x = self.layer3(x)  # 8x8
         x = self.avgpool(x)
-        x = x.view(x.size(0), -1)
+        out = []
+        for _x in x:
+            _x = _x.view(_x.size(0), -1)
+            out.append(_x)
         x = self.fc(x)
         return x
 
@@ -296,11 +297,6 @@ class ResNet(nn.Module):
         for i in range(len(self.layer3)):
             x, rloss = self.layer3[i].forward_gate(x)
             regurize_loss_sum += rloss
-
-        #x, rloss = self.layer1(x)  # 32x32
-        #x, rloss = self.layer2(x)  # 16x16
-        #x, rloss = self.layer3(x)  # 8x8
-
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
         x = self.fc(x)
