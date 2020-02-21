@@ -129,28 +129,23 @@ class Bottleneck(nn.Module):
 
     def __init__(self, inplanes, planes, stride=1, downsample=None, gated=False):
         super(Bottleneck, self).__init__()
-        self.conv1_bn = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes)
+        self.conv1_bn = GatedConv_BN(inplanes, planes, kernel_size=1, bias=False)
         self.conv2_bn = GatedConv_BN(planes, planes, kernel_size=3, stride=stride,
                                padding=1, bias=False)
-        self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
-        self.bn3 = nn.BatchNorm2d(planes * 4)
+        self.conv3_bn = GatedConv_BN(planes, planes * 4, kernel_size=1, bias=False)
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
 
-
     def forward(self, x):
         residual = x
-        out = self.conv1(x)
-        out = self.bn1(out)
+        out = self.conv1_bn(x)
         out = self.relu(out)
 
         out = self.conv2_bn(out)
         out = self.relu(out)
 
-        out = self.conv3(out)
-        out = self.bn3(out)
+        out = self.conv3_bn(out)
         if self.downsample is not None:
             residual = self.downsample(x)
 
@@ -160,21 +155,19 @@ class Bottleneck(nn.Module):
 
     def forward_gate(self, x):
         residual = x
-        out = self.conv1(x)
-        out = self.bn1(out)
+        out, rloss1 = self.conv1_bn.forward_gate(out)
         out = self.relu(out)
 
-        out, rloss = self.conv2_bn.forward_gate(out)
+        out, rloss2 = self.conv2_bn.forward_gate(out)
         out = self.relu(out)
 
-        out = self.conv3(out)
-        out = self.bn3(out)
+        out, rloss3 = self.conv3_bn.forward_gate(out)
         if self.downsample is not None:
             residual = self.downsample(x)
 
         out += residual
         #out = self.relu(out)
-        return out, rloss
+        return out, rloss1+rloss2+rloss3
 
 
 

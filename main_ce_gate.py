@@ -291,7 +291,7 @@ def train(trainloader, model, criterion, optimizer, epoch, use_cuda, args):
         # compute output
         if args.gated:
             outputs, regurize_loss = model(inputs)
-            regurize_losses.update(regurize_loss.data[0], inputs.size(0))
+            regurize_losses.update(regurize_loss.item(), inputs.size(0))
         else :
             outputs = model(inputs)
             regurize_loss = 0
@@ -345,9 +345,9 @@ def test(testloader, model, criterion, epoch, use_cuda):
         # measure accuracy and record loss
         prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
 
-        losses.update(loss.data[0], inputs.size(0))
-        top1.update(prec1[0], inputs.size(0))
-        top5.update(prec5[0], inputs.size(0))
+        losses.update(loss.item(), inputs.size(0))
+        top1.update(prec1.item(), inputs.size(0))
+        top5.update(prec5.item(), inputs.size(0))
 
         progress_bar(batch_idx, len(testloader), 'Loss: %.2f | Top1: %.2f | Top5: %.2f'
                     % (losses.avg, top1.avg, top5.avg))

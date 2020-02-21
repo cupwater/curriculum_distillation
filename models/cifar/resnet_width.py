@@ -11,7 +11,7 @@ import torch.nn as nn
 import math
 
 
-__all__ = ['resnet_1x', 'resnet_2x', 'resnet_3x', 'resnet_4x', 'resnet_05x']
+__all__ = ['resnet_08x', 'resnet_06x', 'resnet_1x', 'resnet_2x', 'resnet_3x', 'resnet_4x', 'resnet_05x']
 
 def conv3x3(in_planes, out_planes, stride=1):
     "3x3 convolution with padding"
@@ -100,10 +100,10 @@ class ResNet(nn.Module):
 
         block = Bottleneck if depth >=44 else BasicBlock
 
-        self.inplanes = int(16*width_multi)
-        self.conv1 = nn.Conv2d(3, int(16*width_multi), kernel_size=3, padding=1,
+        self.inplanes = 16
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1,
                                bias=False)
-        self.bn1 = nn.BatchNorm2d(int(16*width_multi))
+        self.bn1 = nn.BatchNorm2d(16)
         self.relu = nn.ReLU(inplace=True)
         self.layer1 = self._make_layer(block, int(16*width_multi), n)
         self.layer2 = self._make_layer(block, int(32*width_multi), n, stride=2)
@@ -151,6 +151,18 @@ class ResNet(nn.Module):
 
         return x
 
+
+def resnet_08x(**kwargs):
+    """
+    Constructs a ResNet model.
+    """
+    return ResNet(width_multi=0.8, **kwargs)
+
+def resnet_06x(**kwargs):
+    """
+    Constructs a ResNet model.
+    """
+    return ResNet(width_multi=0.6, **kwargs)
 
 def resnet_1x(**kwargs):
     """

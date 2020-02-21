@@ -58,14 +58,14 @@ class Bottleneck(nn.Module):
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(Bottleneck, self).__init__()
-        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
+        self.conv1 = SlimmableConv2d(inplanes, planes, kernel_size=1, bias=False)
+        self.bn1 = SwitchableBatchNorm2d(planes)
+        self.conv2 = SlimmableConv2d(planes, planes, kernel_size=3, stride=stride,
                                padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
-        self.bn3 = nn.BatchNorm2d(planes * 4)
-        self.relu = nn.ReLU(inplace=True)
+        self.bn2 = SwitchableBatchNorm2d(planes)
+        self.conv3 = SlimmableConv2d(planes, planes * 4, kernel_size=1, bias=False)
+        self.bn3 = SwitchableBatchNorm2d(planes * 4)
+        self.relu = SlimmableReLU()
         self.downsample = downsample
         self.stride = stride
 
@@ -86,10 +86,11 @@ class Bottleneck(nn.Module):
         if self.downsample is not None:
             residual = self.downsample(x)
 
-        out += residual
+        out_list = []
+        for idx, (_x,_y) in enumerate(zip(out, residual)):
+            out_list.append(_x + _y)
         #out = self.relu(out)
-
-        return out
+        return out_list
 
 
 class ResNet(nn.Module):
@@ -98,7 +99,6 @@ class ResNet(nn.Module):
         super(ResNet, self).__init__()
         # Model type specifies number of layers for CIFAR-10 model
         assert (depth - 2) % 6 == 0, 'depth should be 6n+2'
-        assert depth < 44, 'current we only implemented slimmable method for basicblock, so the layers should lower than 44'
         n = (depth - 2) // 6
 
         #block = Bottleneck if depth >=44 else BasicBlock
@@ -130,9 +130,6 @@ class ResNet(nn.Module):
                 SlimmableConv2d(self.inplanes, planes * block.expansion,
                           kernel_size=1, stride=stride, bias=False),
                 SwitchableBatchNorm2d(planes * block.expansion),
-                #nn.Conv2d(self.inplanes, planes * block.expansion,
-                #          kernel_size=1, stride=stride, bias=False),
-                #nn.BatchNorm2d(planes * block.expansion),
             )
 
         layers = []

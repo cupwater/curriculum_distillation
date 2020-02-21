@@ -88,8 +88,6 @@ parser.add_argument('-f', '--finetune', dest='finetune', action='store_true',
 parser.add_argument('--model-path', type=str, default='n', help='path of pretrained model')
 
 parser.add_argument('--multi-num', type=int, default=2, help='the number of multiple slimmable')
-parser.add_argument('--gated', dest='gated', action='store_true',
-                    help='whether to open the gate for dynamic inference')
 
 
 args = parser.parse_args()
@@ -182,8 +180,7 @@ def main():
     elif args.arch.startswith('resnet'):
         model = models.__dict__[args.arch](
                     num_classes=num_classes,
-                    depth=args.depth,
-                    gated=args.gated
+                    depth=args.depth
                 )
     else:
         model = models.__dict__[args.arch](num_classes=num_classes)
@@ -291,13 +288,8 @@ def train(trainloader, model, criterion, optimizer, epoch, use_cuda, args):
             inputs, targets = inputs.cuda(), targets.cuda(async=True)
         inputs, targets = torch.autograd.Variable(inputs), torch.autograd.Variable(targets)
         # compute output
-        if args.gated:
-            outputs, regurize_loss = model(inputs)
-            losses_regurize.update(regurize_loss.data[0], inputs.size(0))
-        else :
-            outputs = model(inputs)
-            regurize_loss = 0
-            losses_regurize.update(0, inputs.size(0))
+        outputs, regurize_loss = model(inputs)
+        losses_regurize.update(regurize_loss.item(), inputs.size(0))
         loss_sum = 0
         for _idx in range(len(outputs)):
             #pdb.set_trace()
@@ -309,7 +301,7 @@ def train(trainloader, model, criterion, optimizer, epoch, use_cuda, args):
             top1_list[_idx].update(prec1.item(), inputs.size(0))
             top5_list[_idx].update(prec5.item(), inputs.size(0))
 
-        loss_sum += 0.00001*regurize_loss
+        loss_sum += 0.0000001*regurize_loss
 
         # measure accuracy and record loss
         losses.update(loss_sum.item(), inputs.size(0))
