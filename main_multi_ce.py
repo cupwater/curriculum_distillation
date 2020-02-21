@@ -309,9 +309,10 @@ def train(trainloader, model, criterion, optimizer, epoch, use_cuda, args):
         elif args.multi_num == 2:
             progress_bar(batch_idx, len(trainloader), 'Loss: %.2f | Top1_1: %.2f | loss1: %.2f | Top1_2: %.2f | loss2: %.2f'
                     % (losses.avg, top1_list[0].avg, losses_list[0].avg, top1_list[1].avg, losses_list[1].avg))
-        elif args.multi_num == 3:
+        #elif args.multi_num == 3:
+        else:
             progress_bar(batch_idx, len(trainloader), 'Loss: %.2f | Top1_1: %.2f | loss1: %.2f | Top1_2: %.2f | loss2: %.2f | Top1_3: %.2f | loss3: %.2f'
-                    % (losses.avg, top1_list[0].avg, losses_list[0].avg, top1_list[1].avg, losses_list[1].avg, top1_list[2].avg, losses_list[2].avg))
+                    % (losses.avg, top1_list[0].avg, losses_list[0].avg, top1_list[1].avg, losses_list[1].avg, top1_list[-1].avg, losses_list[-1].avg))
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -368,9 +369,10 @@ def test(testloader, model, criterion, epoch, use_cuda, args):
         elif args.multi_num == 2:
             progress_bar(batch_idx, len(testloader), 'Loss: %.2f | Top1_1: %.2f | loss1: %.2f | Top1_2: %.2f | loss2: %.2f'
                     % (losses.avg, top1_list[0].avg, losses_list[0].avg, top1_list[1].avg, losses_list[1].avg))
-        elif args.multi_num == 3:
+        #elif args.multi_num == 3:
+        else:
             progress_bar(batch_idx, len(testloader), 'Loss: %.2f | Top1_1: %.2f | loss1: %.2f | Top1_2: %.2f | loss2: %.2f | Top1_3: %.2f | loss3: %.2f'
-                    % (losses.avg, top1_list[0].avg, losses_list[0].avg, top1_list[1].avg, losses_list[1].avg, top1_list[2].avg, losses_list[2].avg))
+                    % (losses.avg, top1_list[0].avg, losses_list[0].avg, top1_list[1].avg, losses_list[1].avg, top1_list[-1].avg, losses_list[-1].avg))
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
