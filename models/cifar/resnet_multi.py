@@ -101,8 +101,7 @@ class ResNet(nn.Module):
         assert (depth - 2) % 6 == 0, 'depth should be 6n+2'
         n = (depth - 2) // 6
 
-        #block = Bottleneck if depth >=44 else BasicBlock
-        block = BasicBlock
+        block = Bottleneck if depth >=44 else BasicBlock
 
         self.inplanes = 16
         self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1,
