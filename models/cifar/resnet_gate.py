@@ -32,12 +32,12 @@ class GatedConv_BN(nn.Module):
         loss = torch.sum(torch.abs(x))
         return loss
 
-    def forward(self, x):
-        x = self.conv(x)
-        x = self.bn(x)
-        return x
+    # def forward(self, x):
+    #     x = self.conv(x)
+    #     x = self.bn(x)
+    #     return x
 
-    def forward_gate(self, x):
+    def forward(self, x):
         upsampled = F.avg_pool2d(torch.abs(x), x.shape[2])
         ss = upsampled.view(x.shape[0], x.shape[1])
         o_gate = self.gate(ss.detach())
@@ -101,22 +101,22 @@ class BasicBlock(nn.Module):
         self.downsample = downsample
         self.stride = stride
 
+    # def forward(self, x):
+    #     residual = x
+    #     out= self.conv1_bn(x)
+    #     out = self.relu(out)
+    #     out= self.conv2_bn(out)
+    #     if self.downsample is not None:
+    #         residual = self.downsample(x)
+    #     out += residual
+    #     out = self.relu(out)
+    #     return out
+
     def forward(self, x):
         residual = x
-        out= self.conv1_bn(x)
+        out, rloss = self.conv1_bn(x)
         out = self.relu(out)
-        out= self.conv2_bn(out)
-        if self.downsample is not None:
-            residual = self.downsample(x)
-        out += residual
-        out = self.relu(out)
-        return out
-
-    def forward_gate(self, x):
-        residual = x
-        out, rloss = self.conv1_bn.forward_gate(x)
-        out = self.relu(out)
-        out, rloss = self.conv2_bn.forward_gate(out)
+        out, rloss = self.conv2_bn(out)
         if self.downsample is not None:
             residual = self.downsample(x)
         out += residual
@@ -127,7 +127,7 @@ class BasicBlock(nn.Module):
 class Bottleneck(nn.Module):
     expansion = 4
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None, gated=False):
+    def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(Bottleneck, self).__init__()
         self.conv1_bn = GatedConv_BN(inplanes, planes, kernel_size=1, bias=False)
         self.conv2_bn = GatedConv_BN(planes, planes, kernel_size=3, stride=stride,
@@ -137,31 +137,31 @@ class Bottleneck(nn.Module):
         self.downsample = downsample
         self.stride = stride
 
+    # def forward(self, x):
+    #     residual = x
+    #     out = self.conv1_bn(x)
+    #     out = self.relu(out)
+
+    #     out = self.conv2_bn(out)
+    #     out = self.relu(out)
+
+    #     out = self.conv3_bn(out)
+    #     if self.downsample is not None:
+    #         residual = self.downsample(x)
+
+    #     out += residual
+    #     #out = self.relu(out)
+    #     return out
+
     def forward(self, x):
         residual = x
-        out = self.conv1_bn(x)
+        out, rloss1 = self.conv1_bn(out)
         out = self.relu(out)
 
-        out = self.conv2_bn(out)
+        out, rloss2 = self.conv2_bn(out)
         out = self.relu(out)
 
-        out = self.conv3_bn(out)
-        if self.downsample is not None:
-            residual = self.downsample(x)
-
-        out += residual
-        #out = self.relu(out)
-        return out
-
-    def forward_gate(self, x):
-        residual = x
-        out, rloss1 = self.conv1_bn.forward_gate(out)
-        out = self.relu(out)
-
-        out, rloss2 = self.conv2_bn.forward_gate(out)
-        out = self.relu(out)
-
-        out, rloss3 = self.conv3_bn.forward_gate(out)
+        out, rloss3 = self.conv3_bn(out)
         if self.downsample is not None:
             residual = self.downsample(x)
 
@@ -173,15 +173,13 @@ class Bottleneck(nn.Module):
 
 class ResNet(nn.Module):
 
-    def __init__(self, depth, num_classes=100, gated=False, ratio=1.0):
+    def __init__(self, depth, num_classes=100, ratio=1.0):
         super(ResNet, self).__init__()
         # Model type specifies number of layers for CIFAR-10 model
         assert (depth - 2) % 6 == 0, 'depth should be 6n+2'
         n = (depth - 2) // 6
 
         _Graph.set_global_var('ratio', ratio)
-
-        self.gated = gated
 
         block = Bottleneck if depth >=44 else BasicBlock
 
@@ -224,34 +222,34 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
 
-    def forward(self, x):
-        if self.gated:
-            return self.forward_gate(x)
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)    # 32x32
-        x = self.layer1(x)  # 32x32
-        x = self.layer2(x)  # 16x16
-        x = self.layer3(x)  # 8x8
-        x = self.avgpool(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
+    # def forward(self, x):
+    #     if self.gated:
+    #         return self.forward_gate(x)
+    #     x = self.conv1(x)
+    #     x = self.bn1(x)
+    #     x = self.relu(x)    # 32x32
+    #     x = self.layer1(x)  # 32x32
+    #     x = self.layer2(x)  # 16x16
+    #     x = self.layer3(x)  # 8x8
+    #     x = self.avgpool(x)
+    #     x = x.view(x.size(0), -1)
+    #     x = self.fc(x)
+    #     return x
 
-    def forward_gate(self, x):
+    def forward(self, x):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)    # 32x32
 
         regurize_loss_sum = 0
         for i in range(len(self.layer1)):
-            x, rloss = self.layer1[i].forward_gate(x)
+            x, rloss = self.layer1[i](x)
             regurize_loss_sum += rloss
         for i in range(len(self.layer2)):
-            x, rloss = self.layer2[i].forward_gate(x)
+            x, rloss = self.layer2[i](x)
             regurize_loss_sum += rloss
         for i in range(len(self.layer3)):
-            x, rloss = self.layer3[i].forward_gate(x)
+            x, rloss = self.layer3[i](x)
             regurize_loss_sum += rloss
 
         #x, rloss = self.layer1(x)  # 32x32
@@ -265,8 +263,8 @@ class ResNet(nn.Module):
             return x
         return x, regurize_loss_sum
 
-def resnet_gate(depth, num_classes=100, gated=False, ratio=1.0):
+def resnet_gate(depth, num_classes=100, ratio=1.0):
     """
     Constructs a ResNet model.
     """
-    return ResNet(depth, num_classes=num_classes, gated=gated, ratio=ratio)
+    return ResNet(depth, num_classes=num_classes, ratio=ratio)
