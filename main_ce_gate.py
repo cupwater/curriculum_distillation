@@ -35,8 +35,8 @@ parser = argparse.ArgumentParser(description='PyTorch CIFAR100 Training')
 
 parser.add_argument('--rscale', default=0.001, type=float, help='regurization loss scale')
 parser.add_argument('--ratio', default=1, type=float, help='the ratio of execution computation')
-parser.add_argument('--gated', dest='gated', action='store_true',
-                    help='whether to open the gate for dynamic inference')
+# parser.add_argument('--gated', dest='gated', action='store_true',
+                    # help='whether to open the gate for dynamic inference')
 parser.add_argument('-f', '--finetune', dest='finetune', action='store_true',
                     help='finetune a pretrained_model')
 parser.add_argument('--model-path', type=str, default='n', help='path of pretrained model')
@@ -184,11 +184,11 @@ def main():
         model = models.__dict__[args.arch](
                     num_classes=num_classes,
                     depth=args.depth,
-                    gated=args.gated,
+                    # gated=args.gated,
                     ratio=args.ratio
                 )
     else:
-        model = models.__dict__[args.arch](num_classes=num_classes, gated=args.gated, ratio=args.ratio)
+        model = models.__dict__[args.arch](num_classes=num_classes, ratio=args.ratio)
 
     model = torch.nn.DataParallel(model).cuda()
     cudnn.benchmark = True
@@ -289,13 +289,13 @@ def train(trainloader, model, criterion, optimizer, epoch, use_cuda, args):
             inputs, targets = inputs.cuda(), targets.cuda(async=True)
         inputs, targets = torch.autograd.Variable(inputs), torch.autograd.Variable(targets)
         # compute output
-        if args.gated:
-            outputs, regurize_loss = model(inputs)
-            regurize_losses.update(regurize_loss.item(), inputs.size(0))
-        else :
-            outputs = model(inputs)
-            regurize_loss = 0
-            regurize_losses.update(0, inputs.size(0))
+        # if args.gated:
+        #     outputs, regurize_loss = model(inputs)
+        #     regurize_losses.update(regurize_loss.item(), inputs.size(0))
+        # else :
+        outputs = model(inputs)
+        regurize_loss = 0
+        regurize_losses.update(0, inputs.size(0))
         ce_loss = criterion(outputs, targets)
         ce_losses.update(ce_loss.item(), inputs.size(0))
         # measure accuracy and record loss
