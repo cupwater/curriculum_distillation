@@ -141,10 +141,13 @@ def main():
     # Model
     print("==> creating model '{}'".format(args.arch))
 
-    model = models.__dict__[args.arch](num_classes=num_classes, greedyP=args.greedyP)
-    model.load_state_dict(torch.load('experiments/cifar100/dynamic_inference/RNP_RL/vgg_RNP/vgg16-cifar100.pth'), strict=False)
-    model.divide_conv()
-    model.load_state_dict(torch.load('experiments/cifar100/dynamic_inference/RNP_RL/vgg_RNP/vgg16-cifar100-random.pth'), strict=False)
+    if 'resnet' in args.arch :
+        model = models.__dict__[args.arch](args.depth, num_classes=num_classes, greedyP=args.greedyP, group_num=4)
+    elif 'vgg' in args.arcg:
+        model = models.__dict__[args.arch](num_classes=num_classes, greedyP=args.greedyP)
+        model.load_state_dict(torch.load('experiments/cifar100/dynamic_inference/RNP_RL/vgg_RNP/vgg16-cifar100.pth'), strict=False)
+        model.divide_conv()
+        model.load_state_dict(torch.load('experiments/cifar100/dynamic_inference/RNP_RL/vgg_RNP/vgg16-cifar100-random.pth'), strict=False)
 
     model = torch.nn.DataParallel(model).cuda()
     #pmodel = torch.nn.DataParallel(pmodel).cuda()
@@ -153,7 +156,7 @@ def main():
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     criterion_rl = nn.MSELoss()
-    optimizer_rl = optim.Adam(model.module.pnet.parameters(), lr=0.0001, weight_decay=5e-5)
+    optimizer_rl = optim.Adam(model.module.blockskipnet.parameters(), lr=0.0001, weight_decay=5e-5)
 
     # Resume
     title = 'cifar-10-' + args.arch
@@ -229,6 +232,7 @@ def train(trainloader, model, criterion, criterion_rl, optimizer, optimizer_rl, 
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
+    exec_ratios = AverageMeter()
     losses_rl = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
@@ -257,6 +261,7 @@ def train(trainloader, model, criterion, criterion_rl, optimizer, optimizer_rl, 
 
         rtargets = 0
         state_action_values = 0
+        action_mean = 0
         for i in range(len(y)):
             optimizer_rl.zero_grad()
             action = y[i][1]
@@ -265,14 +270,17 @@ def train(trainloader, model, criterion, criterion_rl, optimizer, optimizer_rl, 
                 rtargets = -action.type(torch.cuda.FloatTensor)*0.1 + torch.max(y[i+1][0].detach(), 1)[0].type(torch.cuda.FloatTensor)
             else:
                 rtargets = - action.type(torch.cuda.FloatTensor)*0.1 - raw_loss
+            action_mean += action.type(torch.cuda.FloatTensor).mean()
 
             loss_rl = criterion_rl(state_action_values, rtargets)
             loss_rl.backward(retain_graph=True)
             losses_rl.update(loss_rl.item(), inputs.size(0))
             optimizer_rl.step()
+        
+        exec_ratios.update(action_mean.item()/len(y), len(y))
 
-        progress_bar(batch_idx, len(trainloader), 'Loss: %.2f | Top1: %.2f | Top5: %.2fi | loss_rl: %.2f'
-                    % (losses.avg, top1.avg, top5.avg, losses_rl.avg))
+        progress_bar(batch_idx, len(trainloader), 'Loss: %.2f | Top1: %.2f | Top5: %.2fi | loss_rl: %.2f | exec_ratio: %.3f'
+                    % (losses.avg, top1.avg, top5.avg, losses_rl.avg, exec_ratios.avg))
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -286,6 +294,7 @@ def test(testloader, model, criterion, epoch, use_cuda):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
+    exec_ratios = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
 
@@ -303,6 +312,13 @@ def test(testloader, model, criterion, epoch, use_cuda):
             inputs, targets = torch.autograd.Variable(inputs), torch.autograd.Variable(targets)
         # compute output
         outputs, y = model(inputs)
+
+        action_mean = 0
+        for i in range(len(y)):
+            action = y[i][1]
+            action_mean += action.type(torch.cuda.FloatTensor).mean()
+        exec_ratios.update(action_mean.item()/len(y), len(y))
+
         loss = criterion(outputs, targets)
         # measure accuracy and record loss
         prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
@@ -311,8 +327,8 @@ def test(testloader, model, criterion, epoch, use_cuda):
         top1.update(prec1.item(), inputs.size(0))
         top5.update(prec5.item(), inputs.size(0))
 
-        progress_bar(batch_idx, len(testloader), 'Loss: %.2f | Top1: %.2f | Top5: %.2f'
-                    % (losses.avg, top1.avg, top5.avg))
+        progress_bar(batch_idx, len(testloader), 'Loss: %.2f | Top1: %.2f | Top5: %.2f | exec_ratio: %.3f'
+                    % (losses.avg, top1.avg, top5.avg, exec_ratios.avg))
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
