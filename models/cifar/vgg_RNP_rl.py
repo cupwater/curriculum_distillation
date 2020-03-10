@@ -78,7 +78,10 @@ class vgg_RPN(nn.Module):
         ct = 0
         bs = x.size(0)
         former_state = Variable(torch.zeros(bs, 4)).cuda()
-        random_explo = int(bs*(1-self.greedyP))
+        if not self.training:
+            random_explo = 0
+        else:
+            random_explo = int(bs*(1-self.greedyP))
         for layer in self.conv_layers:
             if isinstance(layer, nn.Conv2d) and ct > 0:
                 x_pool = x.mean(3).mean(2)

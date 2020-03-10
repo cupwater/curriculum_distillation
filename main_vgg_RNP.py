@@ -262,7 +262,7 @@ def train(trainloader, model, criterion, criterion_rl, optimizer, optimizer_rl, 
             action = y[i][1]
             state_action_values = y[i][0].gather(1, action.unsqueeze(1))
             if i < len(y) - 1:
-                rtargets = -action.type(torch.cuda.FloatTensor)*0.1 #+  torch.max(y[i+1][0].detach(), 1)[0].type(torch.cuda.FloatTensor)
+                rtargets = -action.type(torch.cuda.FloatTensor)*0.1 + torch.max(y[i+1][0].detach(), 1)[0].type(torch.cuda.FloatTensor)
             else:
                 rtargets = - action.type(torch.cuda.FloatTensor)*0.1 - raw_loss
 
