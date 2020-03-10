@@ -87,17 +87,17 @@ class vgg_RPN(nn.Module):
                 h = self.pnet(x_pool, former_state, ct)
                 former_state = h
                 # exploration using random select
-                exploration_select = torch.randint(0, self.group_num, [random_explo], dtype=torch.long).cuda()
-                mask[0:random_explo,:].scatter_(1, self.group[ct][exploration_select, :], 1)
+                random_idx = torch.randint(0, self.group_num, [random_explo], dtype=torch.long).cuda()
+                mask[0:random_explo,:].scatter_(1, self.group[ct][random_idx, :], 1)
 
                 # exploitation using greedy strategy
-                exploitation_select = torch.argmax(h[random_explo:], 1)
-                mask[exploitation_select, :].scatter_(1, self.group[ct][exploitation_select, :], 1)
+                greedy_idx = torch.argmax(h[random_explo:], 1)
+                mask[random_explo:, :].scatter_(1, self.group[ct][greedy_idx, :], 1)
 
                 mask = Variable(mask, requires_grad=False).cuda()
                 x = mask.unsqueeze(2).unsqueeze(3)*x
                 #pdb.set_trace()
-                y += [[h,  torch.cat((exploration_select, exploitation_select), 0)]]
+                y += [[h,  torch.cat((random_idx, greedy_idx), 0)]]
                 ct += 1
             elif isinstance(layer, nn.Conv2d) and ct == 0:
                 x = layer(x)
@@ -145,9 +145,9 @@ class vgg_RPN(nn.Module):
                 if m.bias is not None:
                     m.bias.data.zero_()     
 
-def vgg_rnp_rl(num_classes=100):
+def vgg_rnp_rl(num_classes=100, greedyP=0.9):
     """
     Constructs a vgg_RNP model with reinforcement learning training.
     """
-    net = vgg_RPN(num_classes=num_classes)
+    net = vgg_RPN(num_classes=num_classes, greedyP=greedyP)
     return net

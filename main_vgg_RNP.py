@@ -141,7 +141,7 @@ def main():
     # Model
     print("==> creating model '{}'".format(args.arch))
 
-    model = models.__dict__[args.arch](num_classes=num_classes)
+    model = models.__dict__[args.arch](num_classes=num_classes, greedyP=args.greedyP)
     model.load_state_dict(torch.load('experiments/cifar100/dynamic_inference/RNP_RL/vgg_RNP/vgg16-cifar100.pth'), strict=False)
     model.divide_conv()
     model.load_state_dict(torch.load('experiments/cifar100/dynamic_inference/RNP_RL/vgg_RNP/vgg16-cifar100-random.pth'), strict=False)
