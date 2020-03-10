@@ -141,10 +141,13 @@ def main():
     # Model
     print("==> creating model '{}'".format(args.arch))
 
-    model = models.__dict__[args.arch](num_classes=num_classes, greedyP=args.greedyP)
-    model.load_state_dict(torch.load('experiments/cifar100/dynamic_inference/RNP_RL/vgg_RNP/vgg16-cifar100.pth'), strict=False)
-    model.divide_conv()
-    model.load_state_dict(torch.load('experiments/cifar100/dynamic_inference/RNP_RL/vgg_RNP/vgg16-cifar100-random.pth'), strict=False)
+    if 'resnet' in args.arch :
+        model = models.__dict__[args.arch](args.depth, num_classes=num_classes, greedyP=args.greedyP, group_num=4)
+    elif 'vgg' in args.arcg:
+        model = models.__dict__[args.arch](num_classes=num_classes, greedyP=args.greedyP)
+        model.load_state_dict(torch.load('experiments/cifar100/dynamic_inference/RNP_RL/vgg_RNP/vgg16-cifar100.pth'), strict=False)
+        model.divide_conv()
+        model.load_state_dict(torch.load('experiments/cifar100/dynamic_inference/RNP_RL/vgg_RNP/vgg16-cifar100-random.pth'), strict=False)
 
     model = torch.nn.DataParallel(model).cuda()
     #pmodel = torch.nn.DataParallel(pmodel).cuda()
@@ -153,7 +156,7 @@ def main():
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     criterion_rl = nn.MSELoss()
-    optimizer_rl = optim.Adam(model.module.pnet.parameters(), lr=0.0001, weight_decay=5e-5)
+    optimizer_rl = optim.Adam(model.module.blockskipnet.parameters(), lr=0.0001, weight_decay=5e-5)
 
     # Resume
     title = 'cifar-10-' + args.arch
@@ -255,21 +258,21 @@ def train(trainloader, model, criterion, criterion_rl, optimizer, optimizer_rl, 
         optimizer.step()
 
 
-        rtargets = 0
-        state_action_values = 0
-        for i in range(len(y)):
-            optimizer_rl.zero_grad()
-            action = y[i][1]
-            state_action_values = y[i][0].gather(1, action.unsqueeze(1))
-            if i < len(y) - 1:
-                rtargets = -action.type(torch.cuda.FloatTensor)*0.1 + torch.max(y[i+1][0].detach(), 1)[0].type(torch.cuda.FloatTensor)
-            else:
-                rtargets = - action.type(torch.cuda.FloatTensor)*0.1 - raw_loss
+        #rtargets = 0
+        #state_action_values = 0
+        #for i in range(len(y)):
+        #    optimizer_rl.zero_grad()
+        #    action = y[i][1]
+        #    state_action_values = y[i][0].gather(1, action.unsqueeze(1))
+        #    if i < len(y) - 1:
+        #        rtargets = -action.type(torch.cuda.FloatTensor)*0.1 + torch.max(y[i+1][0].detach(), 1)[0].type(torch.cuda.FloatTensor)
+        #    else:
+        #        rtargets = - action.type(torch.cuda.FloatTensor)*0.1 - raw_loss
 
-            loss_rl = criterion_rl(state_action_values, rtargets)
-            loss_rl.backward(retain_graph=True)
-            losses_rl.update(loss_rl.item(), inputs.size(0))
-            optimizer_rl.step()
+        #    loss_rl = criterion_rl(state_action_values, rtargets)
+        #    loss_rl.backward(retain_graph=True)
+        #    losses_rl.update(loss_rl.item(), inputs.size(0))
+        #    optimizer_rl.step()
 
         progress_bar(batch_idx, len(trainloader), 'Loss: %.2f | Top1: %.2f | Top5: %.2fi | loss_rl: %.2f'
                     % (losses.avg, top1.avg, top5.avg, losses_rl.avg))

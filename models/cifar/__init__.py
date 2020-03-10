@@ -66,12 +66,14 @@ from .vgg import *
 from .vgg_RNP_rl import *
 from .resnet import *
 from .resnet_multi import *
+from .resnet_channel_rdi import *
 from .resnet_gate import *
 from .resnet_multi_gate import *
 from .cifarnet import *
 from .cifarnet_gate import *
 from .resnet_width import *
 from .resnet_at import *
+from .resnet_RNP import *
 from .resnet_feat_at import *
 from .resnet_cckd import *
 from .resnet_mb import *
