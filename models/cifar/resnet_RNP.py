@@ -195,7 +195,7 @@ class ResNet(nn.Module):
         prob_action_list = []
         block_idx = 0
         former_state=torch.zeros(x.size(0), get_value('group_num'), dtype=torch.float32).cuda()
-        action=torch.zeros(x.size(0), get_value('group_num'), dtype=torch.int32).cuda()
+        action=torch.zeros(x.size(0), dtype=torch.int32).cuda()
         for i in range(len(self.layer1)):
             action, former_state = self.blockskipnet(x, former_state, block_idx)
             x = self.layer1[i](x, action.type(torch.cuda.FloatTensor) / get_value('group_num'))
