@@ -47,7 +47,6 @@ class BlockSkip(nn.Module):
         h = self.rnncell(self.relu(self.embeddings[block_idx](ss)), former_state)
         random_actions = torch.randint(0, get_value('group_num'), [random_explo], dtype=torch.long).cuda()
         greedy_actions = torch.argmax(h[random_explo:], 1).cuda()
-        #pdb.set_trace()
         return torch.cat((random_actions, greedy_actions), 0), h
 
 

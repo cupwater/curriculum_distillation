@@ -262,6 +262,7 @@ def train(trainloader, model, criterion, criterion_rl, optimizer, optimizer_rl, 
         rtargets = 0
         state_action_values = 0
         action_mean = 0
+        loss_rl = 0
         for i in range(len(y)):
             optimizer_rl.zero_grad()
             action = y[i][1]
@@ -271,11 +272,11 @@ def train(trainloader, model, criterion, criterion_rl, optimizer, optimizer_rl, 
             else:
                 rtargets = - action.type(torch.cuda.FloatTensor)*0.1 - raw_loss
             action_mean += action.type(torch.cuda.FloatTensor).mean()
+            loss_rl += criterion_rl(state_action_values, rtargets)
 
-            loss_rl = criterion_rl(state_action_values, rtargets)
-            loss_rl.backward(retain_graph=True)
-            losses_rl.update(loss_rl.item(), inputs.size(0))
-            optimizer_rl.step()
+        loss_rl.backward(retain_graph=True)
+        losses_rl.update(loss_rl.item(), inputs.size(0))
+        optimizer_rl.step()
         
         exec_ratios.update(action_mean.item()/len(y), len(y))
 

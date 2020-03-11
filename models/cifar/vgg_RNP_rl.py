@@ -55,7 +55,7 @@ class vgg_RPN(nn.Module):
         )
         self.rnncell = nn.GRUCell(256, 4, bias=True)
         self._initialize_weights()
-        self.pnet = pruning_model(self.extra_layers_encode)
+        self.blockskipnet = pruning_model(self.extra_layers_encode)
         # mode: 0 for VGG baseline, 1 for random pruning, 2 for RNP training
         self.group = []
         self.greedyP = greedyP
@@ -87,7 +87,7 @@ class vgg_RPN(nn.Module):
                 x_pool = x.mean(3).mean(2)
                 x = layer(x)
                 mask = torch.zeros(x.size(0), x.size(1)).cuda()
-                h = self.pnet(x_pool, former_state, ct)
+                h = self.blockskipnet(x_pool, former_state, ct)
                 former_state = h
                 # exploration using random select
                 random_idx = torch.randint(0, self.group_num, [random_explo], dtype=torch.long).cuda()
