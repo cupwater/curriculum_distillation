@@ -47,7 +47,6 @@ class BlockSkip(nn.Module):
         h = self.rnncell(self.relu(self.embeddings[block_idx](ss)), former_state)
         random_actions = torch.randint(0, get_value('group_num'), [random_explo], dtype=torch.long).cuda()
         greedy_actions = torch.argmax(h[random_explo:], 1).cuda()
-        #pdb.set_trace()
         return torch.cat((random_actions, greedy_actions), 0), h
 
 
@@ -198,17 +197,29 @@ class ResNet(nn.Module):
         former_state=torch.zeros(x.size(0), get_value('group_num'), dtype=torch.float32).cuda()
         action=torch.zeros(x.size(0), get_value('group_num'), dtype=torch.int32).cuda()
         for i in range(len(self.layer1)):
+<<<<<<< HEAD
             action, former_state = self.blockskipnet(x, former_state, block_idx)
+=======
+            #action, former_state = self.blockskipnet(x, former_state, block_idx)
+>>>>>>> 2f21db4adf8c1874652ee37d9af5b44efdd20bed
             x = self.layer1[i](x, action.type(torch.cuda.FloatTensor) / get_value('group_num'))
             prob_action_list.append([former_state, action])
             block_idx += 1
         for i in range(len(self.layer2)):
+<<<<<<< HEAD
             action, former_state = self.blockskipnet(x, former_state, block_idx)
+=======
+            #action, former_state = self.blockskipnet(x, former_state, block_idx)
+>>>>>>> 2f21db4adf8c1874652ee37d9af5b44efdd20bed
             x = self.layer2[i](x, action.type(torch.cuda.FloatTensor) / get_value('group_num'))
             prob_action_list.append([former_state, action])
             block_idx += 1
         for i in range(len(self.layer3)):
+<<<<<<< HEAD
             action, former_state = self.blockskipnet(x, former_state, block_idx)
+=======
+            #action, former_state = self.blockskipnet(x, former_state, block_idx)
+>>>>>>> 2f21db4adf8c1874652ee37d9af5b44efdd20bed
             x = self.layer3[i](x, action.type(torch.cuda.FloatTensor) / get_value('group_num'))
             prob_action_list.append([former_state, action])
             block_idx += 1
