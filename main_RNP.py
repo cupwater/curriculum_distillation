@@ -78,7 +78,8 @@ parser.add_argument('-f', '--finetune', dest='finetune', action='store_true',
                     help='finetune a pretrained_model')
 parser.add_argument('--model-path', type=str, default='n', help='path of pretrained model')
 
-parser.add_argument('--greedyP', type=float, default=0.9, help='LR is multiplied by gamma on schedule.')
+parser.add_argument('--greedyP', type=float, default=0.9, help='exploration and exploitation ratio for greedy search.')
+parser.add_argument('--rloss-scale', type=float, default=0.1, help='rloss scale for greedy search.')
 
 args = parser.parse_args()
 state = {k: v for k, v in args._get_kwargs()}
@@ -86,7 +87,7 @@ state = {k: v for k, v in args._get_kwargs()}
 # Validate dataset
 assert args.dataset == 'cifar10' or args.dataset == 'cifar100', 'Dataset can only be cifar10 or cifar100.'
 # when specify_path is true, use the specify path
-args.save_path = 'experiments/' + args.dataset + '/dynamic_inference/RNP/' + args.arch + str(args.depth) + '_wd' + str(args.weight_decay) + '_greedyP' + str(args.greedyP) 
+args.save_path = 'experiments/' + args.dataset + '/dynamic_inference/RNP/' + args.arch + str(args.depth) + '_wd' + str(args.weight_decay) + '_greedyP' + str(args.greedyP) + '_rloss' + str(args.rloss_scale) 
 if not os.path.isdir(args.save_path):
     os.makedirs(args.save_path)
 
@@ -203,7 +204,7 @@ def main():
 
         print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
 
-        train_loss, train_top1, train_top5 = train(trainloader, model, criterion, criterion_rl, optimizer, optimizer_rl, epoch, use_cuda)
+        train_loss, train_top1, train_top5 = train(trainloader, model, criterion, criterion_rl, optimizer, optimizer_rl, epoch, use_cuda, args)
         test_loss, test_top1, test_top5 = test(testloader, model, criterion, epoch, use_cuda)
         # append logger file
         logger.append([state['lr'], train_loss, test_loss, train_top1, train_top5, test_top1, test_top5])
@@ -224,7 +225,7 @@ def main():
     print('Best acc:')
     print(best_acc)
 
-def train(trainloader, model, criterion, criterion_rl, optimizer, optimizer_rl, epoch, use_cuda):
+def train(trainloader, model, criterion, criterion_rl, optimizer, optimizer_rl, epoch, use_cuda, args):
     # switch to train mode
     model.train()
 
@@ -272,7 +273,7 @@ def train(trainloader, model, criterion, criterion_rl, optimizer, optimizer_rl, 
             else:
                 rtargets = - action.type(torch.cuda.FloatTensor)*0.1 - raw_loss
             action_mean += action.type(torch.cuda.FloatTensor).mean()
-            loss_rl += criterion_rl(state_action_values, rtargets)
+            loss_rl += args.rloss_scale * criterion_rl(state_action_values, rtargets)
 
         loss_rl.backward(retain_graph=True)
         losses_rl.update(loss_rl.item(), inputs.size(0))

@@ -33,8 +33,8 @@ class BlockSkip(nn.Module):
     def _initialize_weights(self):
         for m in self.modules():
             if isinstance(m, nn.Linear):
-                m.weight.data.normal_(0.1, 0.01)
-                m.bias.data.zero_()
+                m.weight.data.normal_(0, 0.1)
+                #m.bias.data = torch.ones(m.bias.data.size(0))
 
     def forward(self, x, former_state, block_idx):
         if not self.training:
@@ -42,12 +42,12 @@ class BlockSkip(nn.Module):
         else:
             random_explo = int(x.size(0)*(1-get_value('greedyP')))
         # get execution ratio in this block through pruning network
-        upsampled = F.avg_pool2d(torch.abs(x), x.shape[2])
+        upsampled = F.avg_pool2d(x, x.shape[2])
         ss = upsampled.view(x.shape[0], x.shape[1])
-        h = self.rnncell(self.relu(self.embeddings[block_idx](ss)), former_state)
+        h_state = self.rnncell(self.relu(self.embeddings[block_idx](ss.detach())), former_state)
         random_actions = torch.randint(0, get_value('group_num'), [random_explo], dtype=torch.long).cuda()
-        greedy_actions = torch.argmax(h[random_explo:], 1).cuda()
-        return torch.cat((random_actions, greedy_actions), 0), h
+        greedy_actions = torch.argmax(h_state[random_explo:], 1).cuda()
+        return torch.cat((random_actions, greedy_actions), 0), h_state
 
 
 class GatedConv_BN(nn.Module):
