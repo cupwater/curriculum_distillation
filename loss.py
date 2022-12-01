@@ -157,3 +157,82 @@ class SPKDCrossEntropy(nn.Module):
         weights = torch.topk(self.softmax(gt_logits), 1)[0]
         loss = torch.mean( (1-self.alpha)*weights.detach()*ce_losses + self.alpha*(1-weights.detach())*ce_losses )
         return loss
+
+
+
+# independent loss for ensemble leanring, used in ensemble methods
+class IndependentLoss(nn.Module):
+    def __init__(self, eps=1e-10):
+        super(IndependentLoss, self).__init__()
+        self.eps=eps
+
+    def forward(self, pred_logits_list, targets):
+        ce_loss = 0
+        for i in range(len(pred_logits_list)):
+            ce_loss.append( F.cross_entropy(pred_logits_list[i], targets) )
+        total_loss = torch.sum(torch.stack(ce_loss))
+        return total_loss
+
+# multiple  choice learning loss, used in ensemble methods
+class MCLLoss(nn.Module):
+    def __init__(self, eps=1e-10, topk=1):
+        super(MCLLoss, self).__init__()
+        self.eps=eps
+        self.topk=topk
+
+    def forward(self, pred_logits_list, targets):
+        ce_loss = 0
+        for i in range(len(pred_logits_list)):
+            ce_loss.append( F.cross_entropy(pred_logits_list[i], targets, reduction='none') )
+        ce_loss = torch.stack(ce_loss)
+        total_loss = torch.sum( torch.mean(ce_loss, dim=0) )
+        min_values, min_index = torch.topk(-ce_loss.t(), self.topk)
+        total_loss -= torch.sum(min_values) / targets.size(0)
+        return total_loss
+
+# confidence multiple  choice learning loss, used in ensemble methods
+class CMCLLoss_v1(nn.Module):
+    def __init__(self, eps=1e-10, topk=1, beta=1.0, num_classes=100):
+        super(CMCLLoss_v1, self).__init__()
+        self.eps=eps
+        self.topk=topk
+        self.beta = beta
+        self.num_classes = num_classes
+        self.curr_step = 0
+
+    def forward(self, pred_logits_list, targets, is_validate=False):
+        ce_loss = []
+        for i in range(len(pred_logits_list)):
+            if is_validate == False:
+                ce_loss.append( F.cross_entropy(pred_logits_list[i], targets, reduction='none') )
+            else :
+                ce_loss.append(torch.mean(F.log_softmax(pred_logits_list[i]+self.eps, dim=1), dim=1))
+        ce_loss = torch.stack(ce_loss)
+        # entropy_list = [ torch.log(len(pred_logits_list)) + torch.mean(F.log_softmax(logits+self.eps, dim=1), dim=1)  for logits in pred_logits_list ]
+        entropy_list = [ -math.log(self.num_classes) - torch.mean(F.log_softmax(logits+self.eps, dim=1), dim=1)  for logits in pred_logits_list ]
+        loss_list = []
+        for m in range(len(pred_logits_list)):
+            if m == 0:
+                loss_list.append(ce_loss[m] + self.beta*( torch.sum(torch.stack(entropy_list[(m+1):]), dim=0) ))
+            elif m ==  len(pred_logits_list)-1:
+                loss_list.append( ce_loss[m] + self.beta*( torch.sum(torch.stack(entropy_list[:m]), dim=0) ))
+            else :
+                loss_list.append( ce_loss[m] + self.beta*( torch.sum(torch.stack(entropy_list[:m] + entropy_list[(m+1):]), dim=0) ))
+        loss_list = torch.stack(loss_list)
+        min_values, min_index = torch.topk( -loss_list.t(), self.topk )
+        min_index = min_index.cpu().numpy().T
+        #min_index = min_index.detach()
+        entropy_list = torch.stack(entropy_list)
+        # here we return the oracle logits from multiple prediction
+        logits_ensemble = torch.stack(pred_logits_list)
+        oracle_logits = logits_ensemble[ min_index[0,:], range(targets.size(0)) ]
+
+        mask = np.zeros((len(pred_logits_list), targets.size(0)))
+        mask[ min_index.reshape(-1), np.tile(range(targets.size(0)), self.topk) ] = 1
+        mask = torch.from_numpy(mask)
+        mask = mask.type(torch.FloatTensor)
+        new_loss = torch.sum(mask.cuda() * (ce_loss - self.beta * entropy_list )) / targets.size(0)
+        new_loss += torch.sum(self.beta * entropy_list) / targets.size(0)
+
+        min_index = torch.from_numpy(min_index[0])
+        return new_loss, oracle_logits, min_index
